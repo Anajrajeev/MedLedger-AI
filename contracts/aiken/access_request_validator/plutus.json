@@ -1,0 +1,139 @@
+{
+  "preamble": {
+    "title": "medledger/access_request_validator",
+    "description": "Immutable audit log validator for medical data access consent on Cardano",
+    "version": "1.0.0",
+    "plutusVersion": "v3",
+    "compiler": {
+      "name": "Aiken",
+      "version": "v1.1.19+e525483"
+    },
+    "license": "Apache-2.0"
+  },
+  "validators": [
+    {
+      "title": "access_request.access_request_validator.spend",
+      "datum": {
+        "title": "datum",
+        "schema": {
+          "$ref": "#/definitions/types~1ConsentDatum"
+        }
+      },
+      "redeemer": {
+        "title": "redeemer",
+        "schema": {
+          "$ref": "#/definitions/types~1ConsentRedeemer"
+        }
+      },
+      "compiledCode": "59018e01010029800aba2aba1aab9faab9eaab9dab9a48888896600264653001300700198039804000cdc3a400530070024888966002600460106ea800e26466453001159800980098059baa0028cc004c038c030dd50014a600266e3c00522100a50a51402d2300f30103010301030100019180798081808180818081808000cc02cdd5003a44444b300130060018acc00528c5660029462b30013371090001bad30133014301430143011375400b15980098021bae30033011375400b15980098021bae30023011375400b1300a3010375460266028602860226ea8016294100f4528201e8a50403d14a0807a294100f4566002601400314a315980098021bae30033011375400b13004375c600460226ea8016294100f201e403c8b201498059baa0079807001a444b300130040028acc004c03cdd5005400e2c80822b300130080028acc004c03cdd5005400e2c80822b30013370e90020014566002601e6ea802a007164041164034806900d0c030c034004dc3a400060126ea800e2c8038600e00260066ea801e29344d95900101",
+      "hash": "62e06b1b9f17b2575831e93eadc7c1c06e653b7cfaecd62082aecc46"
+    },
+    {
+      "title": "access_request.access_request_validator.else",
+      "redeemer": {
+        "schema": {}
+      },
+      "compiledCode": "59018e01010029800aba2aba1aab9faab9eaab9dab9a48888896600264653001300700198039804000cdc3a400530070024888966002600460106ea800e26466453001159800980098059baa0028cc004c038c030dd50014a600266e3c00522100a50a51402d2300f30103010301030100019180798081808180818081808000cc02cdd5003a44444b300130060018acc00528c5660029462b30013371090001bad30133014301430143011375400b15980098021bae30033011375400b15980098021bae30023011375400b1300a3010375460266028602860226ea8016294100f4528201e8a50403d14a0807a294100f4566002601400314a315980098021bae30033011375400b13004375c600460226ea8016294100f201e403c8b201498059baa0079807001a444b300130040028acc004c03cdd5005400e2c80822b300130080028acc004c03cdd5005400e2c80822b30013370e90020014566002601e6ea802a007164041164034806900d0c030c034004dc3a400060126ea800e2c8038600e00260066ea801e29344d95900101",
+      "hash": "62e06b1b9f17b2575831e93eadc7c1c06e653b7cfaecd62082aecc46"
+    }
+  ],
+  "definitions": {
+    "Bool": {
+      "title": "Bool",
+      "anyOf": [
+        {
+          "title": "False",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "title": "True",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": []
+        }
+      ]
+    },
+    "ByteArray": {
+      "dataType": "bytes"
+    },
+    "Int": {
+      "dataType": "integer"
+    },
+    "types/ConsentDatum": {
+      "title": "ConsentDatum",
+      "description": "ConsentDatum - The on-chain audit log entry\n This is stored in the datum of UTxOs at the validator address\n \n IMPORTANT: This does NOT contain any PHI (Protected Health Information)\n Only stores:\n - Wallet identifiers (hashes, not full addresses)\n - Timestamps\n - ZK proof references\n - Approval status",
+      "anyOf": [
+        {
+          "title": "ConsentDatum",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "doctor_pkh",
+              "description": "Hash of the doctor's wallet address",
+              "$ref": "#/definitions/types~1PubKeyHash"
+            },
+            {
+              "title": "patient_pkh",
+              "description": "Hash of the patient's wallet address",
+              "$ref": "#/definitions/types~1PubKeyHash"
+            },
+            {
+              "title": "approved",
+              "description": "Whether consent was approved (true) or revoked (false)",
+              "$ref": "#/definitions/Bool"
+            },
+            {
+              "title": "timestamp",
+              "description": "Unix timestamp (milliseconds) when consent was recorded",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "zk_proof_hash",
+              "description": "Hash of the ZK proof from Midnight blockchain\n Links this public audit log to the private consent proof",
+              "$ref": "#/definitions/ByteArray"
+            },
+            {
+              "title": "request_id",
+              "description": "Request ID (UUID as bytes) for correlation",
+              "$ref": "#/definitions/ByteArray"
+            }
+          ]
+        }
+      ]
+    },
+    "types/ConsentRedeemer": {
+      "title": "ConsentRedeemer",
+      "description": "ConsentRedeemer - Actions that can be performed on consent UTxOs",
+      "anyOf": [
+        {
+          "title": "RecordConsent",
+          "description": "Record new consent (creates audit log entry)",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": []
+        },
+        {
+          "title": "RevokeConsent",
+          "description": "Revoke existing consent (spends and recreates with approved=false)",
+          "dataType": "constructor",
+          "index": 1,
+          "fields": []
+        },
+        {
+          "title": "VerifyConsent",
+          "description": "Verify consent exists (reference input only, no spending)",
+          "dataType": "constructor",
+          "index": 2,
+          "fields": []
+        }
+      ]
+    },
+    "types/PubKeyHash": {
+      "title": "PubKeyHash",
+      "dataType": "bytes"
+    }
+  }
+}

@@ -8,6 +8,11 @@ export const metadata: Metadata = {
   title: "MedLedger AI - Cardano Health Agents",
   description:
     "Privacy-preserving medical data platform powered by Cardano blockchain and Lit Protocol",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

@@ -4,6 +4,9 @@ export interface CardanoWalletApi {
   getUsedAddresses: () => Promise<string[]>;
   getUnusedAddresses: () => Promise<string[]>;
   getChangeAddress: () => Promise<string | null>;
+  // Signing methods for encryption key derivation
+  signData?: (address: string, message: string) => Promise<{ signature: string }>;
+  signMessage?: (message: string) => Promise<string>;
   // Other CIP-30 methods can be added here as needed
 }
 

@@ -57,9 +57,16 @@ function RecordItem({ record, index }: RecordItemProps) {
 
 interface AccessRequestListProps {
   records: RecordType[];
+  reason?: string;
 }
 
-export function AccessRequestList({ records }: AccessRequestListProps) {
+export function AccessRequestList({
+  records,
+  reason,
+}: AccessRequestListProps) {
+  const defaultReason =
+    "The healthcare professional has requested temporary, read-only access to the following sections of your medical record for consultation purposes.";
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -72,9 +79,7 @@ export function AccessRequestList({ records }: AccessRequestListProps) {
           Request Details
         </h3>
         <p className="text-gray-600 leading-relaxed">
-          Dr. Reed has requested temporary, read-only access to the following
-          sections of your medical record for a follow-up consultation regarding
-          your recent cardiac evaluation.
+          {reason || defaultReason}
         </p>
       </div>
 

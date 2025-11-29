@@ -7,7 +7,7 @@ import { useWalletStore } from "@/hooks/useWalletStore";
 import { connectEternlWallet } from "@/lib/wallet-utils";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { shortenAddress, formatAddressForDisplay } from "@/lib/address-utils";
+import { shortenAddress } from "@/lib/address-utils";
 import { Copy, Check } from "lucide-react";
 
 export function WalletSwitcher() {
@@ -68,7 +68,7 @@ export function WalletSwitcher() {
           // Still update the wallet state, but user should know they might need to switch in Eternl
         }
         
-        setWallet({ walletName: "eternl", address: result.address });
+        setWallet({ walletName: "eternl", address: result.address, api: result.api });
         if (typeof window !== "undefined") {
           window.localStorage.setItem("connectedWallet", "eternl");
         }
@@ -78,13 +78,20 @@ export function WalletSwitcher() {
       const errorMessage = err?.message || "Failed to reconnect wallet. Please try again.";
       setError(errorMessage);
       
-      // If user cancelled, that's okay - just reset state
+      // If user cancelled, that's okay - reconnect to get API back
       if (err?.code === 1 || err?.message?.includes("reject") || err?.message?.includes("cancel")) {
-        // User cancelled - reconnect with previous address
+        // User cancelled - reconnect with previous address to restore API
         if (previousAddress) {
-          setWallet({ walletName: "eternl", address: previousAddress });
-          if (typeof window !== "undefined") {
-            window.localStorage.setItem("connectedWallet", "eternl");
+          try {
+            const reconnectResult = await connectEternlWallet();
+            if (reconnectResult) {
+              setWallet({ walletName: "eternl", address: reconnectResult.address, api: reconnectResult.api });
+              if (typeof window !== "undefined") {
+                window.localStorage.setItem("connectedWallet", "eternl");
+              }
+            }
+          } catch (reconnectErr) {
+            console.error("Failed to reconnect after cancel:", reconnectErr);
           }
         }
         return;
@@ -175,7 +182,7 @@ export function WalletSwitcher() {
                   </button>
                 </div>
                 <div className="font-mono text-xs text-medical-blue break-all leading-relaxed select-all">
-                  {formatAddressForDisplay(address)}
+                  {address}
                 </div>
               </div>
 

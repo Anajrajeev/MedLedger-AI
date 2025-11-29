@@ -1,10 +1,12 @@
 /**
- * Check and setup database and encryption key before starting dev server
+ * Check and setup database before starting dev server
  * 
  * This script:
- * 1. Checks if PROFILE_ENC_KEY exists, generates one if missing
- * 2. Checks if database table exists, creates it if missing
- * 3. Exits with code 0 if everything is ready
+ * 1. Checks if database tables exist, creates them if missing
+ * 2. Exits with code 0 if everything is ready
+ * 
+ * Note: Encryption is handled on frontend using wallet signatures.
+ * No server-side encryption keys are needed.
  */
 
 require("dotenv").config({ path: ".env.local" });
@@ -17,50 +19,9 @@ async function checkAndSetup() {
   let needsSetup = false;
   const errors = [];
 
-  // Check encryption key
-  const existingKey = process.env.PROFILE_ENC_KEY?.trim();
-  const isValidKey = existingKey && existingKey.length === 64 && /^[0-9a-fA-F]+$/.test(existingKey);
-  
-  if (!existingKey || !isValidKey) {
-    if (existingKey && !isValidKey) {
-      console.log("🔑 PROFILE_ENC_KEY is invalid format, generating new key...");
-    } else {
-      console.log("🔑 PROFILE_ENC_KEY not found, generating new key...");
-    }
-    
-    const key = crypto.randomBytes(32).toString("hex");
-    
-    // Read existing .env.local or create new
-    const envPath = path.join(process.cwd(), ".env.local");
-    let envContent = "";
-    
-    if (fs.existsSync(envPath)) {
-      envContent = fs.readFileSync(envPath, "utf8");
-      // Ensure file ends with newline
-      if (!envContent.endsWith("\n")) {
-        envContent += "\n";
-      }
-    }
-    
-    // Add or update PROFILE_ENC_KEY
-    if (envContent.includes("PROFILE_ENC_KEY=")) {
-      envContent = envContent.replace(
-        /PROFILE_ENC_KEY=.*/g,
-        `PROFILE_ENC_KEY=${key}`
-      );
-    } else {
-      envContent += `PROFILE_ENC_KEY=${key}\n`;
-    }
-    
-    fs.writeFileSync(envPath, envContent);
-    console.log("✅ Generated and saved PROFILE_ENC_KEY to .env.local");
-    needsSetup = true;
-    
-    // Update process.env for current session
-    process.env.PROFILE_ENC_KEY = key;
-  } else {
-    console.log("✅ PROFILE_ENC_KEY is set and valid");
-  }
+  // Note: Encryption keys are now derived on frontend from wallet signatures
+  // No server-side encryption keys needed
+  console.log("✅ Encryption handled on frontend (no server keys needed)");
 
   // Check database connection and table
   if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === "") {
@@ -104,7 +65,7 @@ async function checkAndSetup() {
     }
   }
 
-  // Report critical errors (should be none now since we auto-fix PROFILE_ENC_KEY)
+  // Report critical errors
   if (errors.length > 0) {
     console.error("\n❌ Critical setup errors:");
     errors.forEach((err) => console.error(`   - ${err}`));

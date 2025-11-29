@@ -5,42 +5,89 @@
 import type { CardanoWalletApi } from "@/types/window";
 
 /**
+ * Lazy load the address conversion utility to avoid WebAssembly loading issues
+ */
+async function convertToBech32(address: string): Promise<string> {
+  // Check if already bech32
+  if (address.startsWith('addr1') || address.startsWith('addr_test1')) {
+    return address;
+  }
+  
+  // Dynamically import to avoid loading WASM on server
+  const { normalizeAddressToBech32 } = await import('./cardano-address');
+  return await normalizeAddressToBech32(address);
+}
+
+/**
  * Helper function to get any available address from wallet
  * Tries multiple CIP-30 methods in order of preference
+ * 
+ * IMPORTANT: Returns the address in whatever format the wallet provides.
+ * Eternl returns hex-encoded CBOR from getUsedAddresses() and bech32 from getChangeAddress().
+ * We need to be consistent about which format we use.
  */
 export async function getWalletAddress(
   api: CardanoWalletApi
 ): Promise<string | null> {
   try {
-    // First, try to get used addresses (preferred)
+    // First, try to get used addresses (preferred for registered wallets)
     const used = await api.getUsedAddresses();
-    console.log("getUsedAddresses returned:", used);
+    console.log("[Wallet] getUsedAddresses returned:", {
+      count: used?.length || 0,
+      firstAddress: used && used.length > 0 ? used[0].substring(0, 30) + "..." : null,
+      length: used && used.length > 0 ? used[0].length : 0,
+      format: used && used.length > 0 ? (used[0].startsWith("addr") ? "bech32" : "hex") : "none",
+    });
+    
     if (used && used.length > 0) {
       const address = used[0];
-      console.log("Using address from getUsedAddresses:", address.substring(0, 20) + "...", "Type:", address.startsWith("addr1") || address.startsWith("addr_test1") ? "bech32" : "hex");
+      console.log("[Wallet] Using address from getUsedAddresses:", {
+        preview: address.substring(0, 30) + "...",
+        length: address.length,
+        format: address.startsWith("addr1") || address.startsWith("addr_test1") ? "bech32" : "hex"
+      });
       return address;
     }
 
     // Fallback to unused addresses
     const unused = await api.getUnusedAddresses();
-    console.log("getUnusedAddresses returned:", unused);
+    console.log("[Wallet] getUnusedAddresses returned:", {
+      count: unused?.length || 0,
+      firstAddress: unused && unused.length > 0 ? unused[0].substring(0, 30) + "..." : null,
+      length: unused && unused.length > 0 ? unused[0].length : 0,
+      format: unused && unused.length > 0 ? (unused[0].startsWith("addr") ? "bech32" : "hex") : "none",
+    });
+    
     if (unused && unused.length > 0) {
       const address = unused[0];
-      console.log("Using address from getUnusedAddresses:", address.substring(0, 20) + "...", "Type:", address.startsWith("addr1") || address.startsWith("addr_test1") ? "bech32" : "hex");
+      console.log("[Wallet] Using address from getUnusedAddresses:", {
+        preview: address.substring(0, 30) + "...",
+        length: address.length,
+        format: address.startsWith("addr1") || address.startsWith("addr_test1") ? "bech32" : "hex"
+      });
       return address;
     }
 
     // Last resort: get change address
     const changeAddress = await api.getChangeAddress();
-    console.log("getChangeAddress returned:", changeAddress);
+    console.log("[Wallet] getChangeAddress returned:", {
+      address: changeAddress ? changeAddress.substring(0, 30) + "..." : null,
+      length: changeAddress ? changeAddress.length : 0,
+      format: changeAddress && (changeAddress.startsWith("addr1") || changeAddress.startsWith("addr_test1")) ? "bech32" : "hex",
+    });
+    
     if (changeAddress) {
-      console.log("Using change address:", changeAddress.substring(0, 20) + "...", "Type:", changeAddress.startsWith("addr1") || changeAddress.startsWith("addr_test1") ? "bech32" : "hex");
+      console.log("[Wallet] Using change address:", {
+        preview: changeAddress.substring(0, 30) + "...",
+        length: changeAddress.length,
+        format: changeAddress.startsWith("addr1") || changeAddress.startsWith("addr_test1") ? "bech32" : "hex"
+      });
       return changeAddress;
     }
 
     return null;
   } catch (err) {
-    console.error("Error fetching wallet address", err);
+    console.error("[Wallet] Error fetching wallet address", err);
     return null;
   }
 }
@@ -76,15 +123,26 @@ export async function connectEternlWallet(
     }
 
     const api = await eternl.enable();
-    const address = await getWalletAddress(api);
+    const rawAddress = await getWalletAddress(api);
 
-    if (!address) {
+    if (!rawAddress) {
       throw new Error(
         "Unable to retrieve wallet address. Please ensure your wallet is set up correctly."
       );
     }
 
-    return { api, address };
+    // ALWAYS convert to bech32 format for consistency
+    console.log("[Wallet] Converting address to bech32 format...");
+    const bech32Address = await convertToBech32(rawAddress);
+    
+    console.log("[Wallet] Final address:", {
+      raw: rawAddress.substring(0, 30) + "...",
+      bech32: bech32Address.substring(0, 30) + "...",
+      rawLength: rawAddress.length,
+      bech32Length: bech32Address.length,
+    });
+
+    return { api, address: bech32Address };
   } catch (err: any) {
     console.error("Failed to connect Eternl wallet", err);
     

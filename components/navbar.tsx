@@ -2,27 +2,54 @@
 
 import React from "react";
 import { motion } from "framer-motion";
-import { Bell, Shield } from "lucide-react";
+import { Bell } from "lucide-react";
+import Image from "next/image";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { WalletSwitcher } from "@/components/wallet-switcher";
 import { shortenAddress } from "@/lib/address-utils";
+import { useRoleStore } from "@/hooks/useRoleStore";
 
 interface NavItem {
   label: string;
   href: string;
-  active?: boolean;
 }
 
-const navItems: NavItem[] = [
-  { label: "Dashboard", href: "/", active: true },
-  { label: "My Records", href: "/records" },
-  { label: "Access Requests", href: "/access-requests" },
-  { label: "Record Logs", href: "/logs" },
-  { label: "AI", href: "/ai" },
-];
-
 export function Navbar() {
+  const pathname = usePathname();
+  const role = useRoleStore((s) => s.role);
+
+  // Role-specific navigation items
+  const getNavItems = (): NavItem[] => {
+    const baseItems: NavItem[] = [
+      { label: "Dashboard", href: "/" },
+      { label: "Access Requests", href: "/access-requests" },
+      { label: "Record Logs", href: "/logs" },
+      { label: "AI", href: "/ai" },
+    ];
+
+    // For doctors and hospitals, show "Create Records" and "Request Logs"
+    if (role === "doctor" || role === "hospital") {
+      return [
+        baseItems[0],
+        { label: "Create Records", href: "/records" },
+        baseItems[1], // Access Requests
+        { label: "Request Logs", href: "/logs" }, // Request Logs instead of Record Logs
+        baseItems[3], // AI
+      ];
+    }
+
+    // For patients and others, show "My Records" and "Record Logs"
+    return [
+      baseItems[0],
+      { label: "My Records", href: "/records" },
+      ...baseItems.slice(1),
+    ];
+  };
+
+  const navItems = getNavItems();
 
   return (
     <motion.nav
@@ -34,40 +61,53 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-medical-blue to-medical-teal flex items-center justify-center shadow-lg">
-              <Shield className="w-6 h-6 text-white" strokeWidth={2.5} />
+          <Link href="/" className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center shadow-lg">
+              <Image
+                src="/logo.png"
+                alt="MedLedger AI Logo"
+                width={40}
+                height={40}
+                className="object-contain"
+                priority
+              />
             </div>
             <span className="text-xl font-semibold text-gray-800">
               MedLedger AI
             </span>
-          </div>
+          </Link>
 
           {/* Navigation Links */}
           <div className="flex items-center gap-1 bg-white/40 rounded-full px-2 py-2 backdrop-blur-sm">
-            {navItems.map((item) => (
-              <motion.a
-                key={item.label}
-                href={item.href}
-                className={cn(
-                  "relative px-5 py-2 rounded-full text-sm font-medium transition-all",
-                  item.active
-                    ? "text-medical-blue"
-                    : "text-gray-600 hover:text-gray-900"
-                )}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                {item.active && (
-                  <motion.div
-                    layoutId="activeTab"
-                    className="absolute inset-0 bg-white rounded-full shadow-md"
-                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                <span className="relative z-10">{item.label}</span>
-              </motion.a>
-            ))}
+            {navItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <motion.div
+                  key={item.label}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Link
+                    href={item.href}
+                    className={cn(
+                      "relative px-5 py-2 rounded-full text-sm font-medium transition-all block",
+                      isActive
+                        ? "text-medical-blue"
+                        : "text-gray-600 hover:text-gray-900"
+                    )}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeTab"
+                        className="absolute inset-0 bg-white rounded-full shadow-md"
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                      />
+                    )}
+                    <span className="relative z-10">{item.label}</span>
+                  </Link>
+                </motion.div>
+              );
+            })}
           </div>
 
           {/* User Actions */}

@@ -1,0 +1,25 @@
+# MedLedger AI - Access Request Validator
+# Aiken Smart Contract for Cardano Preprod Testnet
+#
+# This validator creates an immutable audit log for consent events.
+# It stores ONLY non-PHI metadata: wallet hashes, timestamps, and ZK proof references.
+
+name = "medledger/access_request_validator"
+version = "1.0.0"
+compiler = "v1.1.19"
+plutus = "v3"
+license = "Apache-2.0"
+description = "Immutable audit log validator for medical data access consent on Cardano"
+
+[repository]
+user = "medledger"
+project = "access_request_validator"
+platform = "github"
+
+[[dependencies]]
+name = "aiken-lang/stdlib"
+version = "main"
+source = "github"
+
+[config]
+

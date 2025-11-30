@@ -16,6 +16,7 @@ import doctorContactsRouter from "./routes/doctor-contacts";
 import accessRouter from "./routes/access";
 import savedPatientsRouter from "./routes/savedPatients";
 import publicProfileRouter from "./routes/public-profile";
+import recordsRouter from "./routes/records";
 
 // Load .env.local file
 config({ path: resolve(process.cwd(), ".env.local") });
@@ -49,6 +50,7 @@ app.use("/api/doctor-contacts", doctorContactsRouter);
 app.use("/api/access", accessRouter);
 app.use("/api/saved-patients", savedPatientsRouter);
 app.use("/api/public-profile", publicProfileRouter);
+app.use("/api/records", recordsRouter);
 
 // 404 handler
 app.use((req, res) => {
@@ -74,5 +76,6 @@ app.listen(PORT, () => {
   console.log(`🔓 Access Requests API: http://localhost:${PORT}/api/access`);
   console.log(`💾 Saved Patients API: http://localhost:${PORT}/api/saved-patients`);
   console.log(`👁️ Public Profile API: http://localhost:${PORT}/api/public-profile`);
+  console.log(`📁 Records API: http://localhost:${PORT}/api/records`);
 });
 

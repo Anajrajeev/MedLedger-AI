@@ -64,7 +64,7 @@ export default function AccessRequestsPage() {
 
         const data = await response.json();
         console.log("[Access Requests] Fetched requests:", data);
-        
+
         // Fetch public profiles for each doctor/hospital (no decryption needed)
         const requestsWithProfiles = await Promise.all(
           (data.requests || []).map(async (request: PendingRequest) => {
@@ -73,10 +73,10 @@ export default function AccessRequestsPage() {
               const publicProfileResponse = await fetch(
                 `${API_URL}/api/public-profile/${encodeURIComponent(request.doctorWallet)}`
               );
-              
+
               if (publicProfileResponse.ok) {
                 const publicProfileData = await publicProfileResponse.json();
-                
+
                 if (publicProfileData.exists) {
                   return {
                     ...request,
@@ -93,12 +93,12 @@ export default function AccessRequestsPage() {
             } catch (profileError) {
               console.error("[Access Requests] Failed to fetch public profile:", profileError);
             }
-            
+
             // Return request without profile if fetch failed
             return request;
           })
         );
-        
+
         setAccessRequests(requestsWithProfiles);
       } catch (err: any) {
         console.error("Failed to fetch access requests:", err);
@@ -122,7 +122,7 @@ export default function AccessRequestsPage() {
       // Step 1: Call backend to prepare transaction
       setTxStatus({ message: 'Preparing transaction...' });
       console.log('[Approval] Step 1: Calling backend to prepare transaction...');
-      
+
       const response = await fetch(`${API_URL}/api/access/approve`, {
         method: "POST",
         headers: {
@@ -153,55 +153,47 @@ export default function AccessRequestsPage() {
         // Step 3: Sign and submit transaction with wallet
         setTxStatus({ message: 'Connecting to wallet...' });
         console.log('[Approval] Step 2: Signing transaction with wallet...');
-        
+
         const unsignedTxData = data.blockchain.cardano.unsignedTxData;
-        
+
         setTxStatus({ message: 'Building transaction... Please sign in your wallet.' });
-        
-        // Use Mesh SDK for browser-friendly transaction building
-        const result = await (async () => {
+
+        // Define transaction submission function
+        const submitTransaction = async () => {
           try {
             console.log('[Transaction] Building consent transaction...');
             console.log('[Transaction] Validator address:', unsignedTxData.validatorAddress);
 
-            // Dynamic import of Mesh SDK - browser-friendly, no WASM issues
-            const { MeshWallet } = await import('@meshsdk/core');
+            // Dynamic import of Mesh SDK
+            const { BrowserWallet, Transaction } = await import('@meshsdk/core');
 
-            // Connect to wallet
-            console.log('[Wallet] Connecting to eternl...');
-            if (typeof window === 'undefined' || !(window as any).cardano?.eternl) {
-              throw new Error('Eternl wallet not found. Please install it.');
-            }
+            // Connect to wallet using MeshSDK
+            console.log('[Wallet] Connecting to eternl via MeshSDK...');
+            // Note: BrowserWallet.enable will throw if wallet not found or user rejects
+            const wallet = await BrowserWallet.enable('eternl');
 
-            const walletApi = await (window as any).cardano.eternl.enable();
-            const wallet = new MeshWallet(walletApi);
-            
-            const walletAddress = await wallet.getUsedAddresses();
-            console.log('[Transaction] Wallet address:', walletAddress[0]?.substring(0, 30) + '...');
+            // Get wallet address for logging
+            const walletAddress = await wallet.getChangeAddress();
+            console.log('[Transaction] Wallet address:', walletAddress?.substring(0, 30) + '...');
 
-            // Check balance
-            const balance = await wallet.getBalance();
-            // Balance is an array of assets, find lovelace
-            const lovelaceAsset = balance.find((asset: any) => asset.unit === 'lovelace');
-            const lovelaceBalance = lovelaceAsset ? BigInt(lovelaceAsset.quantity) : BigInt(0);
+            // Check balance using MeshSDK
+            const lovelaceBalanceStr = await wallet.getLovelace();
+            const lovelaceBalance = BigInt(lovelaceBalanceStr);
             const balanceADA = Number(lovelaceBalance) / 1000000;
-            
+
             console.log('[Transaction] Wallet balance:', balanceADA, 'ADA');
-            
+
             if (lovelaceBalance < BigInt(3000000)) {
-              throw new Error(`Insufficient funds. Need at least 3 ADA (have ${balanceADA.toFixed(2)} ADA). Get testnet ADA from faucet.`);
+              throw new Error(`Insufficient funds. Need at least 3 ADA (have ${balanceADA.toFixed(2)} ADA).`);
             }
 
-            // Build transaction using Mesh SDK Transaction builder
-            console.log('[Transaction] Building transaction to lock 2 ADA at validator...');
-            
+            // Build transaction
+            console.log('[Transaction] Building transaction...');
             const minLovelace = 2000000; // 2 ADA
-            
-            // Use MeshJS Transaction - pass wallet instance (MeshWallet)
-            const { Transaction } = await import('@meshsdk/core');
+
+            // Pass the Mesh Wallet instance to Transaction
             const tx = new Transaction({ initiator: wallet });
-            
-            // Send lovelace to validator address with inline datum
+
             tx.sendLovelace(
               {
                 address: unsignedTxData.validatorAddress,
@@ -212,54 +204,42 @@ export default function AccessRequestsPage() {
               },
               minLovelace.toString()
             );
-            
-            // Add metadata
+
             tx.setMetadata(674, unsignedTxData.metadata[674]);
-            
-            // Build, sign, and submit using wallet methods
+
             const unsignedTx = await tx.build();
             const signedTx = await wallet.signTx(unsignedTx, true);
             const txHash = await wallet.submitTx(signedTx);
 
             console.log('[Transaction] ✅ Transaction submitted successfully!');
-            console.log('[Transaction] TX Hash:', txHash);
-            
-            const explorerUrl = `https://preprod.cardanoscan.io/transaction/${txHash}`;
-            console.log('[Transaction] View on explorer:', explorerUrl);
 
             return {
               success: true,
               txHash,
-              explorerUrl,
+              explorerUrl: `https://preprod.cardanoscan.io/transaction/${txHash}`,
             };
           } catch (error) {
             console.error('[Transaction] ❌ Transaction failed:', error);
-            
-            let errorMessage = 'Transaction failed';
-            if (error instanceof Error) {
-              errorMessage = error.message;
-            } else {
-              errorMessage = String(error);
-            }
-
             return {
               success: false,
-              error: errorMessage,
+              error: error instanceof Error ? error.message : String(error),
             };
           }
-        })();
-        
+        };
+
+        // Execute the transaction
+        const result = await submitTransaction();
+
         if (result.success && result.txHash) {
           console.log('[Approval] ✅ Transaction submitted successfully!');
-          console.log('[Approval] TX Hash:', result.txHash);
-          
+
           setTxStatus({
             message: 'Transaction submitted to Cardano!',
             txHash: result.txHash,
             explorerUrl: result.explorerUrl,
           });
 
-          // Optional: Update backend with real transaction hash
+          // Update backend
           try {
             await fetch(`${API_URL}/api/access/update-tx`, {
               method: 'POST',
@@ -271,10 +251,9 @@ export default function AccessRequestsPage() {
               }),
             });
           } catch (updateError) {
-            console.warn('[Approval] Failed to update backend with real TX hash:', updateError);
+            console.warn('[Approval] Failed to update backend:', updateError);
           }
 
-          // Show success for 5 seconds before removing from list
           setTimeout(() => {
             setAccessRequests((prev) => prev.filter((req) => req.id !== requestId));
             setTxStatus(null);
@@ -283,12 +262,12 @@ export default function AccessRequestsPage() {
           throw new Error(result.error || 'Transaction failed');
         }
       } else {
-        // No wallet signing - just show backend approval
-        console.log('[Approval] ⚠️  Transaction prepared but not submitted (wallet signing not available)');
-        setTxStatus({ 
-          message: 'Request approved (transaction prepared but not submitted to blockchain)' 
+        // No wallet signing
+        console.log('[Approval] ⚠️ Transaction prepared but not submitted (no wallet)');
+        setTxStatus({
+          message: 'Request approved (transaction prepared but not submitted to blockchain)'
         });
-        
+
         setTimeout(() => {
           setAccessRequests((prev) => prev.filter((req) => req.id !== requestId));
           setTxStatus(null);
@@ -425,11 +404,10 @@ export default function AccessRequestsPage() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`border px-4 py-3 rounded-lg ${
-                txStatus.txHash
+              className={`border px-4 py-3 rounded-lg ${txStatus.txHash
                   ? 'bg-green-50 border-green-200 text-green-700'
                   : 'bg-blue-50 border-blue-200 text-blue-700'
-              }`}
+                }`}
             >
               <div className="flex items-start gap-3">
                 {!txStatus.txHash && (
@@ -526,11 +504,11 @@ export default function AccessRequestsPage() {
                         </div>
                         <div>
                           <p className="font-semibold text-gray-900">
-                            {request.doctorInfo?.role === "hospital" 
-                              ? "Hospital" 
+                            {request.doctorInfo?.role === "hospital"
+                              ? "Hospital"
                               : request.doctorInfo?.role === "doctor"
-                              ? "Doctor"
-                              : "Healthcare Professional"}
+                                ? "Doctor"
+                                : "Healthcare Professional"}
                           </p>
                           <p className="text-sm text-gray-500 font-mono">
                             {request.doctorWallet.substring(0, 20)}...
@@ -564,4 +542,3 @@ export default function AccessRequestsPage() {
     </div>
   );
 }
-

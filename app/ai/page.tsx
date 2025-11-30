@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Calendar, BookOpen, Shield, Loader2, CheckCircle2, XCircle, X } from "lucide-react";
-import { runExplainer, runAppointment, runInsurance } from "@/lib/agentClient";
+import { runExplainer, runExplainerWithPDF, runAppointment, runInsurance, runInsuranceWithPDF } from "@/lib/agentClient";
 import { useWalletStore } from "@/hooks/useWalletStore";
 import { deriveEncryptionKey, decryptProfile } from "@/lib/crypto/profileEncryption";
 import { API_URL } from "@/lib/api-config";
@@ -56,6 +56,13 @@ export default function AIPage() {
     appointment: "Find nearby hospitals for a general checkup",
     explainer: "",
     insurance: "",
+  });
+  const [uploadedFiles, setUploadedFiles] = useState<Record<string, File | null>>({
+    explainer: null,
+    insurance: null,
+  });
+  const [conversationIds, setConversationIds] = useState<Record<string, string>>({
+    insurance: `session-${Date.now()}`,
   });
   const [showPatientInfoModal, setShowPatientInfoModal] = useState(false);
   const [patientInfoModalData, setPatientInfoModalData] = useState<PatientInfoModalData>({
@@ -391,13 +398,33 @@ export default function AIPage() {
 
       switch (agentId) {
         case "explainer":
-          response = await runExplainer(defaultInput);
+          // Check if a file is uploaded - use PDF upload endpoint
+          const uploadedFile = uploadedFiles.explainer;
+          if (uploadedFile) {
+            response = await runExplainerWithPDF(uploadedFile, defaultInput);
+          } else {
+            response = await runExplainer(defaultInput);
+          }
           break;
         case "appointment":
           response = await runAppointment(defaultInput);
           break;
         case "insurance":
-          response = await runInsurance(defaultInput);
+          // Check if a file is uploaded - use PDF upload endpoint
+          const insuranceFile = uploadedFiles.insurance;
+          if (insuranceFile) {
+            response = await runInsuranceWithPDF(insuranceFile, defaultInput);
+            // After successful upload, clear the file so user can ask questions
+            setUploadedFiles((prev) => ({ ...prev, insurance: null }));
+          } else {
+            // Use conversation_id for insurance queries
+            const conversationId = conversationIds.insurance || `session-${Date.now()}`;
+            response = await runInsurance({ ...defaultInput, conversation_id: conversationId });
+            // Update conversation_id if provided in response
+            if (response.conversation_id) {
+              setConversationIds((prev) => ({ ...prev, insurance: response.conversation_id }));
+            }
+          }
           break;
         default:
           throw new Error("Unknown agent");
@@ -473,7 +500,11 @@ export default function AIPage() {
                 {/* User Input Field */}
                 <div className="mb-4">
                   <label htmlFor={`query-${agent.id}`} className="block text-sm font-medium text-gray-700 mb-2">
-                    Your Query
+                    {agent.id === "explainer" 
+                      ? "Text Query (or upload PDF below)" 
+                      : agent.id === "insurance"
+                      ? "Ask a Question (or upload document below to add to knowledge base)"
+                      : "Your Query"}
                   </label>
                   <input
                     id={`query-${agent.id}`}
@@ -484,7 +515,9 @@ export default function AIPage() {
                       agent.id === "appointment"
                         ? "Find nearby hospitals for a general checkup"
                         : agent.id === "explainer"
-                        ? "Explain my lab results in simple terms"
+                        ? "Explain my lab results in simple terms (or upload PDF)"
+                        : agent.id === "insurance"
+                        ? "What is the sum insured for john doe"
                         : "Help me understand my insurance coverage"
                     }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
@@ -492,12 +525,56 @@ export default function AIPage() {
                   />
                 </div>
 
+                {/* PDF Upload Field for Explainer Agent */}
+                {agent.id === "explainer" && (
+                  <div className="mb-4">
+                    <label htmlFor={`file-${agent.id}`} className="block text-sm font-medium text-gray-700 mb-2">
+                      Upload Medical Report PDF (Optional)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id={`file-${agent.id}`}
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setUploadedFiles((prev) => ({ ...prev, [agent.id]: file }));
+                          if (file) {
+                            setUserQueries((prev) => ({ ...prev, [agent.id]: file.name }));
+                          }
+                        }}
+                        className="flex-1 text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer"
+                        disabled={loading[agent.id]}
+                      />
+                      {uploadedFiles[agent.id] && (
+                        <button
+                          onClick={() => {
+                            setUploadedFiles((prev) => ({ ...prev, [agent.id]: null }));
+                            setUserQueries((prev) => ({ ...prev, [agent.id]: "" }));
+                            const fileInput = document.getElementById(`file-${agent.id}`) as HTMLInputElement;
+                            if (fileInput) fileInput.value = "";
+                          }}
+                          className="px-3 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                          disabled={loading[agent.id]}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    {uploadedFiles[agent.id] && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Selected: {uploadedFiles[agent.id]?.name} ({((uploadedFiles[agent.id]?.size || 0) / 1024 / 1024).toFixed(2)} MB)
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Run Agent Button */}
                 <motion.button
                   whileHover={{ scale: loading[agent.id] ? 1 : 1.02 }}
                   whileTap={{ scale: loading[agent.id] ? 1 : 0.98 }}
                   onClick={() => handleRunAgent(agent.id)}
-                  disabled={loading[agent.id] || !userQueries[agent.id]?.trim()}
+                  disabled={loading[agent.id] || (!userQueries[agent.id]?.trim() && !uploadedFiles[agent.id])}
                   className="w-full px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading[agent.id] ? (
@@ -548,8 +625,118 @@ export default function AIPage() {
                     <div className="text-sm text-gray-700 whitespace-pre-wrap break-words">
                       {(() => {
                         const result = results[agent.id];
-                        // Format appointment agent response nicely
+                        // Format agent responses nicely
                         if (typeof result === "object" && result !== null) {
+                          // Explainer agent response format
+                          if (agent.id === "explainer" && result.summary) {
+                            return (
+                              <div className="space-y-3">
+                                <div className="p-3 bg-purple-50 rounded-lg">
+                                  <p className="font-semibold text-purple-900 mb-2">📋 Summary</p>
+                                  <p className="text-sm">{result.summary}</p>
+                                </div>
+                                
+                                {result.key_findings && result.key_findings.length > 0 && (
+                                  <div className="mt-3">
+                                    <p className="font-semibold text-gray-800 mb-2">🔍 Key Findings</p>
+                                    <ul className="list-disc list-inside space-y-1 text-sm">
+                                      {result.key_findings.map((finding: string, idx: number) => (
+                                        <li key={idx} className="text-gray-700">{finding}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                
+                                {result.risk_prediction && (
+                                  <div className="mt-3 p-3 bg-yellow-50 rounded-lg">
+                                    <p className="font-semibold text-gray-800 mb-2">⚠️ Risk Assessment</p>
+                                    <p className="text-sm mb-2">
+                                      <strong>Overall Risk:</strong> <span className={`font-bold ${
+                                        result.risk_prediction.overall_risk === "LOW" ? "text-green-600" :
+                                        result.risk_prediction.overall_risk === "MEDIUM" ? "text-yellow-600" :
+                                        "text-red-600"
+                                      }`}>{result.risk_prediction.overall_risk}</span>
+                                    </p>
+                                    
+                                    {result.risk_prediction.risk_assessments && result.risk_prediction.risk_assessments.length > 0 && (
+                                      <div className="mt-2 space-y-2">
+                                        {result.risk_prediction.risk_assessments.map((assessment: any, idx: number) => (
+                                          <div key={idx} className="p-2 bg-white rounded border border-gray-200">
+                                            <p className="font-semibold text-sm">{assessment.disease}</p>
+                                            <p className="text-xs text-gray-600">
+                                              Risk: <span className={`font-semibold ${
+                                                assessment.risk_level === "LOW" ? "text-green-600" :
+                                                assessment.risk_level === "MEDIUM" ? "text-yellow-600" :
+                                                "text-red-600"
+                                              }`}>{assessment.risk_level}</span> ({assessment.risk_score})
+                                            </p>
+                                            {assessment.recommendations && assessment.recommendations.length > 0 && (
+                                              <div className="mt-1">
+                                                <p className="text-xs font-semibold text-gray-700">Recommendations:</p>
+                                                <ul className="list-disc list-inside text-xs text-gray-600">
+                                                  {assessment.recommendations.map((rec: string, recIdx: number) => (
+                                                    <li key={recIdx}>{rec}</li>
+                                                  ))}
+                                                </ul>
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                    
+                                    {result.risk_prediction.requires_doctor_review && (
+                                      <p className="mt-2 text-xs font-semibold text-red-600">⚠️ Requires doctor review</p>
+                                    )}
+                                  </div>
+                                )}
+                                
+                                {result.confidence_estimate && (
+                                  <p className="mt-2 text-xs text-gray-500">
+                                    Confidence: {(result.confidence_estimate * 100).toFixed(0)}%
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          }
+                          
+                          // Insurance agent response format
+                          if (agent.id === "insurance" && result.answer) {
+                            return (
+                              <div className="space-y-3">
+                                <div className="p-3 bg-green-50 rounded-lg">
+                                  <p className="font-semibold text-green-900 mb-2">💬 Answer</p>
+                                  <p className="text-sm">{result.answer}</p>
+                                </div>
+                                
+                                {result.sources && result.sources.length > 0 && (
+                                  <div className="mt-3">
+                                    <p className="font-semibold text-gray-800 mb-2 text-xs">📚 Sources</p>
+                                    <ul className="list-disc list-inside space-y-1 text-xs">
+                                      {result.sources.map((source: string, idx: number) => (
+                                        <li key={idx} className="text-gray-600">{source}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                
+                                {result.status && (
+                                  <p className="mt-2 text-xs text-gray-500">
+                                    Status: <span className={`font-semibold ${
+                                      result.status === "success" ? "text-green-600" : "text-yellow-600"
+                                    }`}>{result.status}</span>
+                                  </p>
+                                )}
+                                
+                                {result.conversation_id && (
+                                  <p className="mt-1 text-xs text-gray-400">
+                                    Session: {result.conversation_id}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          }
+                          
                           // Appointment agent response format
                           if (result.status === "appointment_scheduled" || result.selected_hospital) {
                             return (

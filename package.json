@@ -9,18 +9,12 @@
     "lint": "next lint",
     "db:setup": "node scripts/setup-database.js",
     "db:reset": "node scripts/reset-database.js",
-    "db:test": "node scripts/test-db-connection.js",
     "db:check-users": "node scripts/check-users.js",
     "db:convert-addresses": "node scripts/convert-hex-to-bech32.js",
     "db:migrate": "node scripts/migrate-blockchain-columns.js",
     "db:migrate:records": "node scripts/migrate-records-tables.js",
     "server:dev": "tsx watch src/index.ts",
-    "server:start": "tsx src/index.ts",
-    "test:blockchain": "node scripts/test-aiken-midnight.js",
-    "test:blockchain:verbose": "node scripts/test-aiken-midnight.js --verbose",
-    "test:create-users": "node scripts/create-test-users.js",
-    "verify:approval": "node scripts/verify-approval.js",
-    "test:blockfrost": "node scripts/test-blockfrost-aiken.js"
+    "server:start": "tsx src/index.ts"
   },
   "dependencies": {
     "@blockfrost/blockfrost-js": "^6.0.0",
@@ -55,6 +49,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.11",
     "@types/node": "^20.12.0",
     "@types/pg": "^8.10.9",
     "@types/react": "^18.3.0",

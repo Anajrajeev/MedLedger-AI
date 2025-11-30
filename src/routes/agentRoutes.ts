@@ -14,8 +14,26 @@
  */
 
 import { Router } from "express";
+import multer from "multer";
+import FormDataLib from "form-data";
+import axios from "axios";
 
 const router = Router();
+
+// Configure multer for file uploads (memory storage)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === "application/pdf") {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF files are allowed"));
+    }
+  },
+});
 
 // Your actual agent service endpoints (where your AI agents are deployed)
 const AGENT_ENDPOINTS = {
@@ -95,7 +113,14 @@ I can help you with:
 
 /**
  * Transform input to match agent service format
- * Your agents expect: { identifierFromPurchaser, input_data: { user_request, pincode, patient_info } }
+ * 
+ * Explainer Agent expects: { identifierFromPurchaser, input_data: { patient_id, record_text, metadata } }
+ * Appointment Agent expects: { identifierFromPurchaser, input_data: { user_request, pincode, patient_info } }
+ * 
+ * Required fields for Explainer Agent:
+ * - patient_id: string (optional)
+ * - record_text: string (the medical record or text to analyze)
+ * - metadata: { timestamp, source } (optional)
  * 
  * Required fields for Appointment Agent:
  * - user_request: string
@@ -106,7 +131,48 @@ function transformInputForAgent(input: any, agentType: string): any {
   // Generate a unique identifier for this request
   const identifier = `medledger-${agentType}-${Date.now()}`;
   
-  // Base input_data structure
+  // Explainer agent has a different format
+  if (agentType === "explainer") {
+    // Explainer agent expects: { identifierFromPurchaser, input_data: { patient_id, record_text, metadata } }
+    // NOTE: patient_id is REQUIRED by the API schema
+    const inputData: any = {};
+    
+    // Extract record_text from various input formats (REQUIRED)
+    if (input.record_text) {
+      inputData.record_text = input.record_text;
+    } else if (input.text) {
+      inputData.record_text = input.text;
+    } else if (input.query) {
+      inputData.record_text = input.query;
+    } else if (input.user_request) {
+      inputData.record_text = input.user_request;
+    } else {
+      inputData.record_text = "Please provide medical information to analyze.";
+    }
+    
+    // patient_id is REQUIRED by the API - always include it
+    // Use provided value, or extract from patient_info, or generate a default
+    inputData.patient_id = input.patient_id 
+      || input.patient_info?.patient_id 
+      || `P-${Date.now().toString().slice(-8)}`; // Generate unique patient ID
+    
+    // Optional metadata
+    if (input.metadata) {
+      inputData.metadata = input.metadata;
+    } else {
+      inputData.metadata = {
+        timestamp: Math.floor(Date.now() / 1000),
+        source: "medledger"
+      };
+    }
+    
+    return {
+      identifierFromPurchaser: identifier,
+      input_data: inputData,
+    };
+  }
+  
+  // Base input_data structure for other agents
   const inputData: any = {
     user_request: input.query || input.user_request || input.text || "Please help me with healthcare information.",
   };
@@ -176,14 +242,14 @@ async function callAgentService(endpoint: string, input: any, agentType: string)
     const cleanBase = baseUrl.replace(/\/api\/v1$/, "");
     endpointPatterns.push(`${cleanBase}/start_job`);
   } else if (agentType === "explainer") {
-    // Explainer agent - try multiple patterns
+    // Explainer agent uses /start_job endpoint (confirmed from example)
     const cleanBase = baseUrl.replace(/\/api\/v1$/, "");
     endpointPatterns.push(
-      `${cleanBase}/api/v1`,  // Try /api/v1 directly
-      `${cleanBase}/api/v1/explain`,  // Try /api/v1/explain
-      `${cleanBase}/explain`,  // Try /explain at root
-      `${cleanBase}/api/v1/start_job`,  // Try /api/v1/start_job
-      `${cleanBase}/start_job`,  // Try /start_job at root
+      `${cleanBase}/start_job`,  // Primary endpoint (confirmed working)
+      `${cleanBase}/api/v1/start_job`,  // Alternative pattern
+      `${cleanBase}/api/v1`,  // Fallback
+      `${cleanBase}/api/v1/explain`,  // Fallback
+      `${cleanBase}/explain`,  // Fallback
     );
   } else {
     // Default: try /start_job at root
@@ -192,20 +258,16 @@ async function callAgentService(endpoint: string, input: any, agentType: string)
   }
   
   // Determine request formats based on agent type and endpoint
-  // /start_job endpoints always need full format, others might accept simple format
+  // /start_job endpoints always need full format with identifierFromPurchaser and input_data
   const getRequestFormats = (endpoint: string, agentType: string) => {
     // If endpoint contains /start_job, use full format only (required by the API)
     if (endpoint.includes("/start_job")) {
       return [transformedInput];
     }
     
-    // For explainer agent on non-/start_job endpoints, try simple format first, then full
+    // For explainer agent on non-/start_job endpoints, try full format first (it's the standard)
     if (agentType === "explainer") {
-      const userRequest = input.query || input.user_request || input.text || "Please help me with healthcare information.";
-      return [
-        { query: userRequest }, // Simple format
-        transformedInput, // Full format
-      ];
+      return [transformedInput]; // Always use full format for explainer
     }
     
     // For other agents, use the transformed input as-is
@@ -223,13 +285,22 @@ async function callAgentService(endpoint: string, input: any, agentType: string)
         console.log(`[Agent Service] Trying ${agentType} agent at: ${jobEndpoint}`);
         console.log(`[Agent Service] Request body:`, JSON.stringify(requestBody, null, 2));
         
-        const response = await fetch(`${jobEndpoint}?Content-Type=application/json`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(requestBody),
-        });
+        // Add timeout to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        
+        try {
+          // Try without query parameter first (standard approach)
+          const response = await fetch(jobEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
+          });
+          
+          clearTimeout(timeoutId);
 
         if (response.ok) {
           const result = await response.json();
@@ -263,28 +334,50 @@ async function callAgentService(endpoint: string, input: any, agentType: string)
         // Other errors (500, etc.) - throw immediately
         throw new Error(`Agent service returned ${response.status}: ${errorText.substring(0, 200)}`);
         
-      } catch (error: any) {
-        // Network errors or non-retryable HTTP errors - throw immediately
-        if (error.message && 
-            !error.message.includes("404") && 
-            !error.message.includes("Not Found") && 
-            !error.message.includes("400") &&
-            !error.message.includes("422")) {
-          console.error(`[Agent Service] ${agentType} error at ${jobEndpoint}:`, error.message);
-          throw error;
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          
+          // Handle timeout
+          if (fetchError.name === "AbortError") {
+            console.log(`[Agent Service] Endpoint ${jobEndpoint} timed out after 30 seconds`);
+            lastError = new Error(`Timeout: Endpoint ${jobEndpoint} did not respond within 30 seconds. The service may be down or slow.`);
+            continue; // Try next endpoint
+          }
+          
+          // Re-throw the fetch error to be handled by outer catch
+          throw fetchError;
         }
-        lastError = error;
-        continue; // Try next endpoint/format
+      } catch (error: any) {
+        // Network errors or other fetch errors
+        if (error.name === "AbortError") {
+          // Already handled above, but just in case
+          lastError = new Error(`Timeout connecting to ${jobEndpoint}`);
+          continue;
+        } else if (error.code === "ENOTFOUND" || error.message?.includes("getaddrinfo")) {
+          console.log(`[Agent Service] DNS error for ${jobEndpoint}: ${error.message}`);
+          lastError = new Error(`Cannot resolve hostname for ${jobEndpoint}. Check if the URL is correct.`);
+          continue; // Try next endpoint
+        } else if (error.message && error.message.includes("Agent service returned")) {
+          // HTTP error from above - already logged, try next endpoint
+          lastError = error;
+          continue;
+        } else {
+          // Other network errors - log and try next endpoint
+          console.error(`[Agent Service] ${agentType} network error at ${jobEndpoint}:`, error.message);
+          lastError = new Error(`Network error: ${error.message}`);
+          continue; // Try next endpoint/format
+        }
       }
     }
   }
   
   // All endpoints failed
   console.error(`[Agent Service] All endpoint patterns failed for ${agentType}`);
+  const errorDetails = lastError ? ` Last error: ${lastError.message}` : "";
   throw new Error(
-    `Agent endpoint not found. Tried: ${endpointPatterns.join(", ")}. ` +
+    `Agent endpoint not found or unreachable. Tried: ${endpointPatterns.join(", ")}.${errorDetails} ` +
     `Make sure ${agentType.toUpperCase()}_AGENT_ENDPOINT in .env.local is set correctly ` +
-    `and the agent service is running.`
+    `and the agent service is running and accessible.`
   );
 }
 
@@ -293,9 +386,25 @@ async function callAgentService(endpoint: string, input: any, agentType: string)
  */
 function formatAgentResponse(result: any, agentType: string) {
   // Extract the actual result from the job response
-  // Your agent returns: { job_id, status, result: { ...actual_agent_response... } }
+  // Explainer agent returns: { job_id, status, result: { summary, key_findings, confidence_estimate, risk_prediction, validation_result } }
+  // Other agents may return similar structure
+  
   if (result.result) {
-    // Return the actual agent result wrapped in a success response
+    // For explainer agent, preserve the full structure including risk_prediction
+    if (agentType === "explainer") {
+      return {
+        success: true,
+        job_id: result.job_id || result.id,
+        status: result.status,
+        blockchainIdentifier: result.blockchainIdentifier || "",
+        agentIdentifier: result.agentIdentifier || "",
+        identifierFromPurchaser: result.identifierFromPurchaser || "",
+        // Spread the actual agent result (summary, key_findings, confidence_estimate, risk_prediction, validation_result)
+        ...result.result,
+      };
+    }
+    
+    // For other agents, return the actual agent result wrapped in a success response
     return {
       success: true,
       job_id: result.job_id || result.id,
@@ -313,6 +422,7 @@ function formatAgentResponse(result: any, agentType: string) {
 
 /**
  * POST /api/agents/explainer
+ * Text-based explainer agent
  */
 router.post("/explainer", async (req, res) => {
   try {
@@ -341,6 +451,103 @@ router.post("/explainer", async (req, res) => {
 });
 
 /**
+ * POST /api/agents/explainer/upload-pdf
+ * PDF upload for explainer agent
+ */
+router.post("/explainer/upload-pdf", upload.single("file"), async (req, res) => {
+  try {
+    const endpoint = AGENT_ENDPOINTS.explainer;
+    
+    if (!endpoint) {
+      console.log("[Agents] Explainer PDF - No endpoint configured");
+      return res.status(400).json({
+        success: false,
+        error: "Explainer agent endpoint not configured",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No PDF file provided",
+      });
+    }
+
+    // Get patient_id from form data or generate default
+    const patientId = req.body.patient_id || `P-${Date.now().toString().slice(-8)}`;
+
+    console.log(`[Agents] Explainer PDF - Uploading to: ${endpoint}/upload_pdf`);
+    console.log(`[Agents] Explainer PDF - File: ${req.file.originalname}, Size: ${req.file.size} bytes`);
+    console.log(`[Agents] Explainer PDF - Patient ID: ${patientId}`);
+
+    // Forward the request to the agent service
+    const uploadUrl = `${endpoint.replace(/\/+$/, "")}/upload_pdf`;
+    console.log(`[Agents] Explainer PDF - Sending to: ${uploadUrl}`);
+    console.log(`[Agents] Explainer PDF - File: ${req.file.originalname}, Size: ${req.file.size} bytes, Patient ID: ${patientId}`);
+    
+    // Create form data using form-data package
+    const formData = new FormDataLib();
+    
+    // Append file - form-data package expects Buffer and options
+    formData.append("file", req.file.buffer, {
+      filename: req.file.originalname || "document.pdf",
+      contentType: req.file.mimetype || "application/pdf",
+    });
+    
+    // Append patient_id as text
+    formData.append("patient_id", patientId);
+
+    // Get headers from form-data (includes Content-Type with boundary)
+    const headers = formData.getHeaders();
+    console.log(`[Agents] Explainer PDF - Content-Type: ${headers['content-type']}`);
+    console.log(`[Agents] Explainer PDF - Boundary: ${headers['content-type']?.split('boundary=')[1]}`);
+    
+    // Use axios for better form-data support
+    // Axios automatically handles form-data streams - don't transform it
+    try {
+      const response = await axios.post(uploadUrl, formData, {
+        headers: headers,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        timeout: 60000, // 60 second timeout
+      });
+
+      const result = response.data;
+    console.log(`[Agents] Explainer PDF - Success`);
+    
+    // Format the response consistently
+    const formattedResult = formatAgentResponse(result, "explainer");
+    res.json(formattedResult);
+    } catch (axiosError: any) {
+      // Handle axios errors
+      if (axiosError.response) {
+        // Server responded with error
+        const errorText = axiosError.response.data?.detail || JSON.stringify(axiosError.response.data);
+        console.error(`[Agents] Explainer PDF - Axios error response (${axiosError.response.status}):`, errorText);
+        throw new Error(`Agent service returned ${axiosError.response.status}: ${errorText.substring(0, 200)}`);
+      } else if (axiosError.request) {
+        // Request made but no response
+        console.error(`[Agents] Explainer PDF - Axios no response:`, axiosError.message);
+        throw new Error(`No response from agent service: ${axiosError.message}`);
+      } else {
+        // Error setting up request
+        console.error(`[Agents] Explainer PDF - Axios setup error:`, axiosError.message);
+        throw axiosError;
+      }
+    }
+  } catch (err: any) {
+    console.error("[Agents] Explainer PDF error:", err.message);
+    console.error("[Agents] Explainer PDF error stack:", err.stack);
+    
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Failed to upload PDF to explainer agent",
+      message: `Explainer agent PDF upload error: ${err.message}. Check backend logs for details.`,
+    });
+  }
+});
+
+/**
  * POST /api/agents/appointment
  */
 router.post("/appointment", async (req, res) => {
@@ -362,6 +569,7 @@ router.post("/appointment", async (req, res) => {
 
 /**
  * POST /api/agents/insurance
+ * Insurance agent query endpoint
  */
 router.post("/insurance", async (req, res) => {
   try {
@@ -372,11 +580,138 @@ router.post("/insurance", async (req, res) => {
       return res.json(getStubResponse("insurance", req.body));
     }
 
-    const result = await callAgentService(endpoint, req.body, "insurance");
-    res.json(result);
+    // Insurance agent uses /ask endpoint with query and conversation_id
+    const query = req.body.query || req.body.user_request || req.body.text || "";
+    const conversationId = req.body.conversation_id || `session-${Date.now()}`;
+
+    const queryUrl = `${endpoint.replace(/\/+$/, "")}/ask?Content-Type=application/json`;
+    console.log(`[Agents] Insurance - Query URL: ${queryUrl}`);
+    console.log(`[Agents] Insurance - Query: ${query}, Conversation ID: ${conversationId}`);
+
+    const response = await fetch(queryUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: query,
+        conversation_id: conversationId,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Insurance agent returned ${response.status}: ${errorText.substring(0, 200)}`);
+    }
+
+    const result = await response.json();
+    console.log(`[Agents] Insurance - Success`);
+    
+    // Return the result as-is (it has answer, sources, status, conversation_id)
+    res.json({
+      success: true,
+      ...result,
+    });
   } catch (err: any) {
     console.error("[Agents] Insurance error:", err.message);
-    return res.json(getStubResponse("insurance", req.body));
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Failed to call insurance agent",
+      message: `Insurance agent service error: ${err.message}. Check backend logs for details.`,
+      fallback: getStubResponse("insurance", req.body),
+    });
+  }
+});
+
+/**
+ * POST /api/agents/insurance/upload-document
+ * Upload document to insurance agent knowledge base
+ */
+router.post("/insurance/upload-document", upload.single("file"), async (req, res) => {
+  try {
+    const endpoint = AGENT_ENDPOINTS.insurance;
+    
+    if (!endpoint) {
+      console.log("[Agents] Insurance PDF - No endpoint configured");
+      return res.status(400).json({
+        success: false,
+        error: "Insurance agent endpoint not configured",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No PDF file provided",
+      });
+    }
+
+    // Get optional document_name from form data
+    const documentName = req.body.document_name || req.file.originalname.replace(/\.pdf$/i, "");
+
+    console.log(`[Agents] Insurance PDF - Uploading to: ${endpoint}/upload_document`);
+    console.log(`[Agents] Insurance PDF - File: ${req.file.originalname}, Size: ${req.file.size} bytes`);
+    console.log(`[Agents] Insurance PDF - Document Name: ${documentName}`);
+
+    // Create form data to forward to the agent service
+    const formData = new FormDataLib();
+    
+    // Append file
+    formData.append("file", req.file.buffer, {
+      filename: req.file.originalname || "document.pdf",
+      contentType: req.file.mimetype || "application/pdf",
+    });
+    
+    // Append optional document_name
+    if (documentName) {
+      formData.append("document_name", documentName);
+    }
+
+    // Get headers from form-data
+    const headers = formData.getHeaders();
+    console.log(`[Agents] Insurance PDF - Content-Type: ${headers['content-type']}`);
+    
+    // Use axios for form-data support
+    try {
+      const uploadUrl = `${endpoint.replace(/\/+$/, "")}/upload_document`;
+      const response = await axios.post(uploadUrl, formData, {
+        headers: headers,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        timeout: 60000, // 60 second timeout
+      });
+
+      const result = response.data;
+      console.log(`[Agents] Insurance PDF - Success`);
+      
+      res.json({
+        success: true,
+        message: "Document uploaded successfully and added to knowledge base",
+        ...result,
+      });
+    } catch (axiosError: any) {
+      // Handle axios errors
+      if (axiosError.response) {
+        const errorText = axiosError.response.data?.detail || JSON.stringify(axiosError.response.data);
+        console.error(`[Agents] Insurance PDF - Axios error response (${axiosError.response.status}):`, errorText);
+        throw new Error(`Agent service returned ${axiosError.response.status}: ${errorText.substring(0, 200)}`);
+      } else if (axiosError.request) {
+        console.error(`[Agents] Insurance PDF - Axios no response:`, axiosError.message);
+        throw new Error(`No response from agent service: ${axiosError.message}`);
+      } else {
+        console.error(`[Agents] Insurance PDF - Axios setup error:`, axiosError.message);
+        throw axiosError;
+      }
+    }
+  } catch (err: any) {
+    console.error("[Agents] Insurance PDF error:", err.message);
+    console.error("[Agents] Insurance PDF error stack:", err.stack);
+    
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Failed to upload document to insurance agent",
+      message: `Insurance agent document upload error: ${err.message}. Check backend logs for details.`,
+    });
   }
 });
 

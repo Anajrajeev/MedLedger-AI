@@ -40,7 +40,7 @@ export default function AccessRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [processingRequest, setProcessingRequest] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [txStatus, setTxStatus] = useState<{ message: string; txHash?: string; explorerUrl?: string } | null>(null);
+  const [txStatus, setTxStatus] = useState<{ message: string; txHash?: string; explorerUrl?: string; error?: string } | null>(null);
 
   const address = useWalletStore((s) => s.address);
   const connected = useWalletStore((s) => s.connected);

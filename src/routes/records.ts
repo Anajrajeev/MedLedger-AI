@@ -122,6 +122,152 @@ router.post("/upload", async (req, res) => {
 });
 
 /**
+ * GET /api/records/get-for-doctor
+ * Get encrypted file for a doctor based on approved access request
+ * This allows doctors to access ALL files in approved categories
+ */
+router.get("/get-for-doctor", async (req, res) => {
+  try {
+    const requestId = req.query.requestId as string;
+    const doctorWallet = req.query.doctorWallet as string;
+    const storageFileId = req.query.storageFileId as string; // This is the B2 file path
+
+    if (!requestId || !doctorWallet || !storageFileId) {
+      return res.status(400).json({ error: "Missing required parameters: requestId, doctorWallet, storageFileId" });
+    }
+
+    // Verify the request is approved and belongs to this doctor
+    const accessCheck = await query(
+      `SELECT id, patient_wallet, record_types, status
+       FROM public.access_requests
+       WHERE id = $1 AND doctor_wallet = $2 AND status = 'approved'`,
+      [requestId, doctorWallet]
+    );
+
+    if (accessCheck.rows.length === 0) {
+      return res.status(403).json({ error: "Access denied. Request not found, not approved, or unauthorized." });
+    }
+
+    const patientWallet = accessCheck.rows[0].patient_wallet;
+    const recordTypes = accessCheck.rows[0].record_types || [];
+
+    // Verify the file belongs to the patient and is in an approved category
+    const fileCheck = await query(
+      `SELECT id, category, owner_wallet
+       FROM public.user_files
+       WHERE drive_file_id = $1 AND owner_wallet = $2`,
+      [storageFileId, patientWallet]
+    );
+
+    if (fileCheck.rows.length === 0) {
+      return res.status(404).json({ error: "File not found or does not belong to the patient" });
+    }
+
+    const fileCategory = fileCheck.rows[0].category;
+    if (!recordTypes.includes(fileCategory)) {
+      return res.status(403).json({ error: "Access denied. This file category was not approved in the access request." });
+    }
+
+    // Get the encrypted file from B2
+    const b2 = await getB2Instance();
+    const bucketName = process.env.B2_BUCKET_NAME || "medledger-patient-records";
+
+    try {
+      const response = await b2.downloadFileByName({
+        bucketName: bucketName,
+        fileName: storageFileId,
+        responseType: 'arraybuffer',
+      });
+
+      let buffer: Buffer;
+      if (Buffer.isBuffer(response.data)) {
+        buffer = response.data;
+      } else if (response.data instanceof ArrayBuffer) {
+        buffer = Buffer.from(response.data);
+      } else if (response.data instanceof Uint8Array) {
+        buffer = Buffer.from(response.data);
+      } else {
+        buffer = Buffer.from(response.data as any);
+      }
+
+      const base64 = buffer.toString("base64");
+
+      res.json({
+        success: true,
+        encryptedBlob: base64,
+      });
+    } catch (b2Error: any) {
+      console.error("[Records] B2 download error:", b2Error);
+      if (b2Error.response?.status === 404) {
+        return res.status(404).json({ error: "File not found in storage" });
+      }
+      throw b2Error;
+    }
+  } catch (error: any) {
+    console.error("[Records] Get for doctor error:", error);
+    res.status(500).json({ error: error.message || "Failed to get file" });
+  }
+});
+
+/**
+ * GET /api/records/list-for-doctor
+ * List files for a doctor based on approved access request
+ */
+router.get("/list-for-doctor", async (req, res) => {
+  try {
+    const requestId = req.query.requestId as string;
+    const doctorWallet = req.query.doctorWallet as string;
+
+    if (!requestId || !doctorWallet) {
+      return res.status(400).json({ error: "Missing requestId or doctorWallet" });
+    }
+
+    // Verify access request is approved
+    const accessCheck = await query(
+      `SELECT id, patient_wallet, record_types, status 
+       FROM public.access_requests
+       WHERE id = $1 AND doctor_wallet = $2 AND status = 'approved'`,
+      [requestId, doctorWallet]
+    );
+
+    if (accessCheck.rows.length === 0) {
+      return res.status(403).json({ error: "Access request not found or not approved" });
+    }
+
+    const patientWallet = accessCheck.rows[0].patient_wallet;
+    const recordTypes = accessCheck.rows[0].record_types || [];
+
+    // Get files for each requested category
+    const files = [];
+    for (const category of recordTypes) {
+      const categoryFiles = await query(
+        `SELECT id, original_name, category, created_at, drive_file_id
+         FROM public.user_files
+         WHERE owner_wallet = $1 AND category = $2
+         ORDER BY created_at DESC`,
+        [patientWallet, category]
+      );
+
+      files.push(...categoryFiles.rows.map(row => ({
+        fileId: row.id,
+        storageFileId: row.drive_file_id,
+        originalName: row.original_name,
+        category: row.category,
+        createdAt: row.created_at,
+      })));
+    }
+
+    res.json({
+      success: true,
+      files,
+    });
+  } catch (error: any) {
+    console.error("[Records] List for doctor error:", error);
+    res.status(500).json({ error: error.message || "Failed to list files" });
+  }
+});
+
+/**
  * GET /api/records/list
  * List all files for a user and category
  */
@@ -145,7 +291,8 @@ router.get("/list", async (req, res) => {
     res.json({
       success: true,
       files: result.rows.map((row) => ({
-        fileId: row.drive_file_id,
+        fileId: row.drive_file_id, // B2 storage path (for fetching encrypted file)
+        dbFileId: row.id, // Database ID (for granting access)
         originalName: row.original_name,
         category: row.category,
         ownerWallet: wallet,

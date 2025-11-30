@@ -2,7 +2,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Navbar } from "@/components/navbar";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardSearchBar } from "@/components/dashboard-search-bar";
 import { MedicalRecordCard } from "@/components/medical-record-card";
@@ -308,7 +307,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen relative overflow-y-auto">
-      <Navbar />
 
       {/* Main Content - Only show when wallet connected and profile checked */}
       {showDashboard && (

@@ -17,6 +17,8 @@ import accessRouter from "./routes/access";
 import savedPatientsRouter from "./routes/savedPatients";
 import publicProfileRouter from "./routes/public-profile";
 import recordsRouter from "./routes/records";
+import agentRoutes from "./routes/agentRoutes";
+import accessGrantRouter from "./routes/access-grant";
 
 // Load .env.local file
 config({ path: resolve(process.cwd(), ".env.local") });
@@ -51,6 +53,8 @@ app.use("/api/access", accessRouter);
 app.use("/api/saved-patients", savedPatientsRouter);
 app.use("/api/public-profile", publicProfileRouter);
 app.use("/api/records", recordsRouter);
+app.use("/api/agents", agentRoutes);
+app.use("/api/access", accessGrantRouter); // Mounts /grant-file and /view-granted-file under /api/access
 
 // 404 handler
 app.use((req, res) => {
@@ -77,5 +81,6 @@ app.listen(PORT, () => {
   console.log(`💾 Saved Patients API: http://localhost:${PORT}/api/saved-patients`);
   console.log(`👁️ Public Profile API: http://localhost:${PORT}/api/public-profile`);
   console.log(`📁 Records API: http://localhost:${PORT}/api/records`);
+  console.log(`🤖 Agents API: http://localhost:${PORT}/api/agents`);
 });
 

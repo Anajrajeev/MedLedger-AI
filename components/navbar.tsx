@@ -1,8 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Bell } from "lucide-react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
@@ -11,6 +10,10 @@ import { cn } from "@/lib/utils";
 import { WalletSwitcher } from "@/components/wallet-switcher";
 import { shortenAddress } from "@/lib/address-utils";
 import { useRoleStore } from "@/hooks/useRoleStore";
+import { useWalletStore } from "@/hooks/useWalletStore";
+import { API_URL } from "@/lib/api-config";
+import { deriveEncryptionKey, decryptProfile } from "@/lib/crypto/profileEncryption";
+import type { CardanoWalletApi } from "@/types/window";
 
 interface NavItem {
   label: string;
@@ -20,32 +23,106 @@ interface NavItem {
 export function Navbar() {
   const pathname = usePathname();
   const role = useRoleStore((s) => s.role);
+  const address = useWalletStore((s) => s.address);
+  const connected = useWalletStore((s) => s.connected);
+  const walletApi = useWalletStore((s) => s.api);
+  const [userInitials, setUserInitials] = useState<string>("U");
+
+  // Function to get initials from a name
+  const getInitials = (name: string): string => {
+    if (!name || name.trim() === "") return "U";
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      // First letter of first name and first letter of last name
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    // Single name - use first two letters or just first letter
+    return name.substring(0, 2).toUpperCase() || name[0].toUpperCase();
+  };
+
+  // Fetch user's name and set initials
+  useEffect(() => {
+    const fetchUserName = async () => {
+      if (!address || !connected || !role) {
+        setUserInitials("U");
+        return;
+      }
+
+      try {
+        // For doctors, hospitals, and others, use public profile (no decryption needed)
+        if (role === "doctor" || role === "hospital" || role === "other") {
+          const publicProfileResponse = await fetch(
+            `${API_URL}/api/public-profile/${encodeURIComponent(address)}`
+          );
+          if (publicProfileResponse.ok) {
+            const publicProfile = await publicProfileResponse.json();
+            if (publicProfile.exists && publicProfile.displayName) {
+              setUserInitials(getInitials(publicProfile.displayName));
+              return;
+            }
+          }
+        }
+
+        // For patients, try to decrypt profile (requires wallet signing)
+        if (role === "patient" && walletApi) {
+          try {
+            const profileResponse = await fetch(
+              `${API_URL}/api/profile/${encodeURIComponent(address)}`
+            );
+            if (profileResponse.ok) {
+              const profileData = await profileResponse.json();
+              if (profileData.exists && profileData.cipher) {
+                const encryptionKey = await deriveEncryptionKey(address, walletApi as CardanoWalletApi);
+                const profile = await decryptProfile(profileData.cipher, encryptionKey);
+                const name = profile.username || profile.name;
+                if (name) {
+                  setUserInitials(getInitials(name));
+                  return;
+                }
+              }
+            }
+          } catch (error) {
+            console.warn("[Navbar] Failed to decrypt patient profile:", error);
+            // Fall through to fallback
+          }
+        }
+
+        // Fallback: use first letter of wallet address
+        if (address && address.length > 0) {
+          setUserInitials(address.substring(0, 1).toUpperCase());
+        } else {
+          setUserInitials("U");
+        }
+      } catch (error) {
+        console.error("[Navbar] Failed to fetch user name:", error);
+        setUserInitials("U");
+      }
+    };
+
+    fetchUserName();
+  }, [address, connected, role, walletApi]);
 
   // Role-specific navigation items
   const getNavItems = (): NavItem[] => {
     const baseItems: NavItem[] = [
-      { label: "Dashboard", href: "/" },
       { label: "Access Requests", href: "/access-requests" },
       { label: "Record Logs", href: "/logs" },
-      { label: "AI", href: "/ai" },
+      { label: "AI Analysis", href: "/ai" },
     ];
 
-    // For doctors and hospitals, show "Create Records" and "Request Logs"
+    // For doctors and hospitals, show "Request Access" and "Request Logs"
     if (role === "doctor" || role === "hospital") {
       return [
-        baseItems[0],
-        { label: "Create Records", href: "/records" },
-        baseItems[1], // Access Requests
+        { label: "Request Access", href: "/access-requests" }, // Request Access instead of Access Requests
         { label: "Request Logs", href: "/logs" }, // Request Logs instead of Record Logs
-        baseItems[3], // AI
+        // Create Records and AI Analysis removed for doctors
       ];
     }
 
     // For patients and others, show "My Records" and "Record Logs"
     return [
-      baseItems[0],
       { label: "My Records", href: "/records" },
-      ...baseItems.slice(1),
+      ...baseItems,
     ];
   };
 
@@ -114,20 +191,10 @@ export function Navbar() {
           <div className="flex items-center gap-4">
             <WalletSwitcher />
 
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              className="relative p-2 rounded-full hover:bg-white/50 transition-colors"
-              aria-label="Notifications"
-            >
-              <Bell className="w-5 h-5 text-gray-700" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-medical-blue rounded-full" />
-            </motion.button>
-
             <Avatar className="h-10 w-10 cursor-pointer hover:ring-medical-blue transition-all">
               <AvatarImage src="/user-avatar.jpg" alt="User" />
               <AvatarFallback className="bg-gradient-to-br from-medical-blue to-medical-teal text-white text-sm">
-                JD
+                {userInitials}
               </AvatarFallback>
             </Avatar>
           </div>

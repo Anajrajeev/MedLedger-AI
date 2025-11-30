@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FlaskConical, Heart, Pill, FileText, Loader2, UserPlus, Trash2 } from "lucide-react";
+import { FlaskConical, FileText, Pill, Stethoscope, Loader2, UserPlus, Trash2 } from "lucide-react";
 import { API_URL } from "@/lib/api-config";
 import { SavePatientModal } from "@/components/save-patient-modal";
 
@@ -22,10 +22,10 @@ interface SavedPatient {
 }
 
 const recordTypes = [
-  { id: "lab_results", label: "Lab Results", icon: FlaskConical },
-  { id: "cardiac_evaluation", label: "Cardiac Evaluation", icon: Heart },
-  { id: "prescription_history", label: "Prescription History", icon: Pill },
-  { id: "consultation_notes", label: "Consultation Notes", icon: FileText },
+  { id: "insurance", label: "Insurance Documents", icon: FileText },
+  { id: "lab-results", label: "Lab Results", icon: FlaskConical },
+  { id: "consultations", label: "Consultation Documents", icon: Stethoscope },
+  { id: "prescriptions", label: "Prescription History", icon: Pill },
 ];
 
 export function RequestAccessForm({

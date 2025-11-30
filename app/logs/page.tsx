@@ -2,17 +2,16 @@
 
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Navbar } from "@/components/navbar";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useWalletStore } from "@/hooks/useWalletStore";
 import { useRoleStore } from "@/hooks/useRoleStore";
 import { API_URL } from "@/lib/api-config";
-import { 
-  Clock, 
-  CheckCircle2, 
-  XCircle, 
-  Loader2, 
+import {
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Loader2,
   FileText,
   FlaskConical,
   Heart,
@@ -24,9 +23,11 @@ import {
   AlertTriangle,
   ExternalLink,
   Copy,
-  Check
+  Check,
+  Eye
 } from "lucide-react";
 import { shortenAddress } from "@/lib/address-utils";
+import { SecureDocumentViewer } from "@/components/secure-doc-viewer";
 
 interface AccessRequest {
   id: string;
@@ -54,24 +55,43 @@ interface AccessRequest {
 }
 
 const recordTypeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+  "insurance": FileText,
   "lab-results": FlaskConical,
-  "cardiac-evaluation": Heart,
-  "prescription-history": Pill,
-  "consultation-notes": FileText,
+  "consultations": FileText,
+  "prescriptions": Pill,
 };
 
 const recordTypeLabels: Record<string, string> = {
+  "insurance": "Insurance Documents",
   "lab-results": "Lab Results",
-  "cardiac-evaluation": "Cardiac Evaluation",
-  "prescription-history": "Prescription History",
-  "consultation-notes": "Consultation Notes",
+  "consultations": "Consultation Documents",
+  "prescriptions": "Prescription History",
 };
+
+interface PatientFile {
+  fileId: string;
+  storageFileId: string;
+  originalName: string;
+  category: string;
+  createdAt: string;
+}
+
+interface PatientFile {
+  fileId: string;
+  storageFileId: string;
+  originalName: string;
+  category: string;
+  createdAt: string;
+}
 
 export default function RequestLogsPage() {
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [viewingFiles, setViewingFiles] = useState<{ requestId: string; files: PatientFile[] } | null>(null);
+  const [loadingFiles, setLoadingFiles] = useState<string | null>(null);
+  const [viewingFileContent, setViewingFileContent] = useState<{ name: string; data: ArrayBuffer } | null>(null);
 
   const address = useWalletStore((s) => s.address);
   const connected = useWalletStore((s) => s.connected);
@@ -108,7 +128,7 @@ export default function RequestLogsPage() {
         requestCount: data.requests?.length || 0,
         requests: data.requests,
       });
-      
+
       // If user is a patient, fetch public profiles for each doctor/hospital
       if (role === "patient") {
         const requestsWithProfiles = await Promise.all(
@@ -118,10 +138,10 @@ export default function RequestLogsPage() {
               const publicProfileResponse = await fetch(
                 `${API_URL}/api/public-profile/${encodeURIComponent(request.doctorWallet)}`
               );
-              
+
               if (publicProfileResponse.ok) {
                 const publicProfileData = await publicProfileResponse.json();
-                
+
                 if (publicProfileData.exists) {
                   return {
                     ...request,
@@ -138,12 +158,12 @@ export default function RequestLogsPage() {
             } catch (profileError) {
               console.error("[Request Logs] Failed to fetch public profile:", profileError);
             }
-            
+
             // Return request without profile if fetch failed
             return request;
           })
         );
-        
+
         console.log("[Request Logs] Setting requests with profiles:", requestsWithProfiles.length);
         setRequests(requestsWithProfiles);
       } else {
@@ -203,6 +223,49 @@ export default function RequestLogsPage() {
     }
   };
 
+  const fetchPatientFiles = async (requestId: string, doctorWallet: string) => {
+    console.log("[Request Logs] fetchPatientFiles called:", { requestId, doctorWallet });
+
+    if (loadingFiles === requestId) {
+      console.log("[Request Logs] Already loading files for this request");
+      return; // Prevent duplicate requests
+    }
+
+    if (!doctorWallet) {
+      console.error("[Request Logs] Doctor wallet not available");
+      setError("Wallet not connected");
+      return;
+    }
+
+    setLoadingFiles(requestId);
+    setError(null);
+
+    try {
+      const url = `${API_URL}/api/records/list-for-doctor?requestId=${encodeURIComponent(requestId)}&doctorWallet=${encodeURIComponent(doctorWallet)}`;
+      console.log("[Request Logs] Fetching files from:", url);
+
+      const response = await fetch(url);
+
+      console.log("[Request Logs] Response status:", response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("[Request Logs] Error response:", errorData);
+        throw new Error(errorData.error || "Failed to fetch patient files");
+      }
+
+      const data = await response.json();
+      console.log("[Request Logs] Files received:", data);
+      setViewingFiles({ requestId, files: data.files || [] });
+    } catch (err: any) {
+      console.error("[Request Logs] Failed to fetch files:", err);
+      setError(err.message || "Failed to load patient files");
+      setViewingFiles(null);
+    } finally {
+      setLoadingFiles(null);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
@@ -215,21 +278,21 @@ export default function RequestLogsPage() {
   };
 
   const getCardanoExplorerUrl = (txHash: string, network: string = "preprod") => {
-    const baseUrl = network === "mainnet" 
+    const baseUrl = network === "mainnet"
       ? "https://cardanoscan.io/transaction"
       : "https://preprod.cardanoscan.io/transaction";
     return `${baseUrl}/${txHash}`;
   };
 
-  const BlockchainField = ({ 
-    label, 
-    value, 
+  const BlockchainField = ({
+    label,
+    value,
     fieldId,
     isWarning = false,
     explorerUrl
-  }: { 
-    label: string; 
-    value: string | null | undefined; 
+  }: {
+    label: string;
+    value: string | null | undefined;
     fieldId: string;
     isWarning?: boolean;
     explorerUrl?: string;
@@ -290,7 +353,6 @@ export default function RequestLogsPage() {
   if (!connected) {
     return (
       <div className="min-h-screen">
-        <Navbar />
         <main className="pt-24 pb-12 px-4 md:px-8">
           <div className="max-w-4xl mx-auto text-center py-20">
             <p className="text-gray-600">Please connect your wallet to view request logs.</p>
@@ -303,8 +365,6 @@ export default function RequestLogsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-teal-50/20 overflow-y-auto">
-      <Navbar />
-
       <main className="pt-24 pb-12 px-4 md:px-8">
         <div className="max-w-6xl mx-auto space-y-8">
           {/* Page Header */}
@@ -321,7 +381,7 @@ export default function RequestLogsPage() {
               </Badge>
             </div>
             <p className="text-lg text-gray-600">
-              {role === "patient" 
+              {role === "patient"
                 ? "View all access requests made to your medical records and their approval status."
                 : "View all access requests and their blockchain verification status."}
             </p>
@@ -391,10 +451,10 @@ export default function RequestLogsPage() {
                             <User className="w-5 h-5 text-gray-500" />
                             <div>
                               <p className="text-sm font-medium text-gray-900">
-                                {request.doctorInfo?.name || 
-                                 (request.doctorInfo?.role === "hospital" ? "Hospital" : 
-                                  request.doctorInfo?.role === "doctor" ? "Doctor" : 
-                                  "Healthcare Professional")}
+                                {request.doctorInfo?.name ||
+                                  (request.doctorInfo?.role === "hospital" ? "Hospital" :
+                                    request.doctorInfo?.role === "doctor" ? "Doctor" :
+                                      "Healthcare Professional")}
                               </p>
                               {request.doctorInfo?.credentials && (
                                 <p className="text-xs text-gray-600">
@@ -571,6 +631,114 @@ export default function RequestLogsPage() {
                         )}
                       </div>
                     )}
+
+                    {/* View Files Button (for doctors on approved requests) */}
+                    {role !== "patient" && request.status === "approved" && address && (
+                      <div className="pt-4 border-t border-gray-200">
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log("[Request Logs] Button clicked for request:", request.id);
+                            fetchPatientFiles(request.id, address);
+                          }}
+                          disabled={loadingFiles === request.id || !address}
+                          className="flex items-center gap-2 px-4 py-2 bg-medical-blue text-white rounded-lg hover:bg-medical-blue/90 transition-colors disabled:opacity-50 cursor-pointer"
+                          type="button"
+                        >
+                          {loadingFiles === request.id ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>Loading Files...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Eye className="w-4 h-4" />
+                              <span>View Patient Files</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Display Files */}
+                        {viewingFiles?.requestId === request.id && viewingFiles.files.length > 0 && (
+                          <div className="mt-4 space-y-2">
+                            <p className="text-sm font-medium text-gray-700">Available Files:</p>
+                            <div className="grid grid-cols-1 gap-2">
+                              {viewingFiles.files.map((file) => (
+                                <div
+                                  key={file.fileId}
+                                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <FileText className="w-5 h-5 text-gray-500" />
+                                    <div>
+                                      <p className="text-sm font-medium text-gray-900">
+                                        {file.originalName}
+                                      </p>
+                                      <p className="text-xs text-gray-500">
+                                        {recordTypeLabels[file.category] || file.category} • {formatDate(file.createdAt)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        // file.fileId is the database ID from list-for-doctor
+                                        // Try to get from granted_files (decrypted file)
+                                        const res = await fetch(`${API_URL}/api/access/view-granted-file?requestId=${request.id}&fileId=${file.fileId}&doctorWallet=${address}`);
+
+                                        if (!res.ok) {
+                                          const errData = await res.json();
+                                          if (res.status === 404) {
+                                            // File not in granted_files - this means the patient hasn't processed it yet
+                                            // or the approval happened before the grant-file feature was added
+                                            throw new Error("NOT_GRANTED");
+                                          }
+                                          throw new Error(errData.error || "Failed to fetch file content");
+                                        }
+
+                                        const data = await res.json();
+                                        const fileData = data.fileData;
+
+                                        // Convert base64 to ArrayBuffer
+                                        const binaryString = window.atob(fileData);
+                                        const len = binaryString.length;
+                                        const bytes = new Uint8Array(len);
+                                        for (let i = 0; i < len; i++) {
+                                          bytes[i] = binaryString.charCodeAt(i);
+                                        }
+
+                                        // Open viewer
+                                        setViewingFileContent({
+                                          name: file.originalName,
+                                          data: bytes.buffer
+                                        });
+                                      } catch (err: any) {
+                                        console.error("Failed to view file:", err);
+                                        if (err.message === "NOT_GRANTED") {
+                                          alert("File not accessible. This file may not have been granted yet. The patient needs to approve the request to grant access to all files in the approved categories.");
+                                        } else {
+                                          alert(`Failed to view file: ${err.message}`);
+                                        }
+                                      }
+                                    }}
+                                    className="px-3 py-1 text-sm bg-medical-blue text-white rounded hover:bg-medical-blue/90 transition-colors"
+                                  >
+                                    View
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {viewingFiles?.requestId === request.id && viewingFiles.files.length === 0 && (
+                          <div className="mt-4 p-3 bg-gray-50 rounded-lg text-sm text-gray-600">
+                            No files available for the requested categories.
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </Card>
                 </motion.div>
               ))}
@@ -578,6 +746,15 @@ export default function RequestLogsPage() {
           )}
         </div>
       </main>
+
+      {/* Secure Document Viewer Modal */}
+      {viewingFileContent && (
+        <SecureDocumentViewer
+          fileData={viewingFileContent.data}
+          fileName={viewingFileContent.name}
+          onClose={() => setViewingFileContent(null)}
+        />
+      )}
     </div>
   );
 }

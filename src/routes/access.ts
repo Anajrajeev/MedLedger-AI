@@ -29,10 +29,28 @@ router.get("/status", async (_req: Request, res: Response) => {
   const midnightStatus = getMidnightStatus();
   const aikenStatus = getAikenStatus();
 
+  // Test Blockfrost connection if configured
+  let blockfrostTest: { success: boolean; error?: string } | null = null;
+  if (aikenStatus.lucidConfigured) {
+    try {
+      const { getLucidInstance } = await import("../aiken/lucidConfig");
+      const lucid = await getLucidInstance();
+      // Try to get network tip to verify connection
+      const tip = await lucid.provider.getBlockHeight();
+      blockfrostTest = { success: true };
+    } catch (error) {
+      blockfrostTest = {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   return res.json({
     success: true,
     midnight: midnightStatus,
     aiken: aikenStatus,
+    blockfrostTest,
     network: "preprod", // Always Preprod testnet
     message: aikenStatus.ready 
       ? "Blockchain integrations are ready"
@@ -330,6 +348,10 @@ router.post("/approve", async (req: Request, res: Response) => {
       });
       // Return a stub result instead of throwing, so the approval can complete
       console.warn("[Access Approve] Falling back to stub mode due to error");
+      // Extract PKH for stub datum
+      const doctorPkh = accessRequest.doctor_wallet.substring(0, 56); // Simplified PKH extraction
+      const patientPkh = accessRequest.patient_wallet.substring(0, 56);
+      
       aikenResult = {
         txHash: `aiken_preprod_stub_${Date.now()}`,
         validatorHash: "stub_validator_hash",
@@ -337,6 +359,25 @@ router.post("/approve", async (req: Request, res: Response) => {
         network: "preprod",
         isRealTx: false,
         timestamp: approvalTimestamp,
+        unsignedTxData: {
+          validatorAddress: "addr_test1stub",
+          datum: JSON.stringify({
+            doctorPkh,
+            patientPkh,
+            approved: true,
+            timestamp: approvalTimestamp.toString(), // Convert to string instead of BigInt
+            zkProofHash: midnightResult.zkProofHash,
+            requestId: String(accessRequest.id),
+          }),
+          metadata: {
+            674: {
+              msg: ["MedLedger Consent Audit Log (STUB)"],
+              request_id: String(accessRequest.id),
+              timestamp: approvalTimestamp,
+            }
+          },
+          scriptHash: "stub_validator_hash",
+        },
       };
     }
 

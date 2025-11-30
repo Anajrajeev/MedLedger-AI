@@ -7,7 +7,8 @@
 import { API_URL } from "../api-config";
 
 export interface FileMetadata {
-  fileId: string;
+  fileId: string; // B2 storage path (for fetching encrypted file)
+  dbFileId?: string; // Database ID (for granting access) - optional for backward compatibility
   originalName: string;
   category: string;
   ownerWallet: string;

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { Navbar } from "@/components/navbar";
+import { AIFloatingButton } from "@/components/ai-fab";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-geist-sans" });
 
@@ -22,7 +24,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.variable}>{children}</body>
+      <body className={inter.variable}>
+        <Navbar />
+        {children}
+        <AIFloatingButton />
+      </body>
     </html>
   );
 }

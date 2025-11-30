@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Navbar } from "@/components/navbar";
 import { DoctorCard } from "@/components/doctor-card";
 import { AccessRequestList } from "@/components/access-request-list";
 import { OnChainNotice } from "@/components/on-chain-notice";
@@ -13,6 +12,11 @@ import { useRoleStore } from "@/hooks/useRoleStore";
 import { Inbox, Loader2, ExternalLink } from "lucide-react";
 import { RequestAccessForm } from "@/components/request-access-form";
 import { API_URL } from "@/lib/api-config";
+
+import { deriveEncryptionKey } from "@/lib/crypto/profileEncryption";
+import { decryptFile } from "@/lib/crypto/fileEncryption";
+import { listFiles, getFile, base64ToBlob } from "@/lib/storage/b2";
+import type { CardanoWalletApi } from "@/types/window";
 
 interface PendingRequest {
   id: string;
@@ -119,6 +123,104 @@ export default function AccessRequestsPage() {
     setTxStatus(null);
 
     try {
+      // Step 0: Grant access to files (Decrypt -> Upload for Doctor)
+      const request = accessRequests.find(r => r.id === requestId);
+      if (request) {
+        setTxStatus({ message: 'Granting file access... Please sign to decrypt files.' });
+        console.log('[Approval] Step 0: Granting file access...');
+
+        // Get wallet API for decryption
+        if (typeof window === "undefined" || !(window as any).cardano?.eternl) {
+          throw new Error("Wallet not connected");
+        }
+        const walletApi = await (window as any).cardano.eternl.enable();
+        if (!walletApi) {
+          throw new Error("Failed to enable wallet");
+        }
+
+        // Derive key once
+        const key = await deriveEncryptionKey(address, walletApi as CardanoWalletApi);
+
+        // Process each requested record type
+        for (const recordType of request.recordTypes) {
+          console.log(`[Approval] Processing category: ${recordType}`);
+          try {
+            const files = await listFiles(address, recordType);
+
+            for (const file of files) {
+              console.log(`[Approval] Granting access to file: ${file.originalName}`);
+
+              try {
+                // 1. Get encrypted file (file.fileId is the B2 storage path)
+                const encryptedBase64 = await getFile(file.fileId);
+                const encryptedBlob = base64ToBlob(encryptedBase64);
+
+                // 2. Decrypt
+                const decryptedBuffer = await decryptFile(encryptedBlob, key);
+
+                // 3. Convert back to base64 for upload
+                const decryptedBlob = new Blob([decryptedBuffer]);
+                const reader = new FileReader();
+                const base64Data = await new Promise<string>((resolve, reject) => {
+                  reader.onloadend = () => {
+                    const res = reader.result as string;
+                    resolve(res.includes(",") ? res.split(",")[1] : res);
+                  };
+                  reader.onerror = reject;
+                  reader.readAsDataURL(decryptedBlob);
+                });
+
+                // 4. Get database ID for this file
+                // We need to look it up since file.fileId is the B2 path
+                // The API should return dbFileId, but if not, we'll need to look it up
+                let dbFileId = (file as any).dbFileId;
+                
+                if (!dbFileId) {
+                  // Look up database ID from B2 path
+                  const lookupRes = await fetch(`${API_URL}/api/records/list?wallet=${encodeURIComponent(address)}&category=${encodeURIComponent(recordType)}`);
+                  if (lookupRes.ok) {
+                    const lookupData = await lookupRes.json();
+                    const foundFile = lookupData.files?.find((f: any) => f.fileId === file.fileId);
+                    if (foundFile?.dbFileId) {
+                      dbFileId = foundFile.dbFileId;
+                    }
+                  }
+                }
+
+                // Use dbFileId if available, otherwise use fileId (B2 path) as fallback
+                const fileIdToGrant = dbFileId || file.fileId;
+
+                // 5. Upload to grant-file endpoint
+                const grantResponse = await fetch(`${API_URL}/api/access/grant-file`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    requestId,
+                    fileId: fileIdToGrant,
+                    fileData: base64Data,
+                    patientWallet: address
+                  })
+                });
+
+                if (!grantResponse.ok) {
+                  const errorData = await grantResponse.json();
+                  console.error(`[Approval] Failed to grant file ${file.originalName}:`, errorData);
+                  throw new Error(`Failed to grant file: ${errorData.error || "Unknown error"}`);
+                }
+
+                console.log(`[Approval] Successfully granted access to file: ${file.originalName} (DB ID: ${fileIdToGrant})`);
+              } catch (fileError: any) {
+                console.error(`[Approval] Error processing file ${file.originalName}:`, fileError);
+                // Continue with other files even if one fails
+              }
+            }
+          } catch (err) {
+            console.error(`[Approval] Failed to grant files for ${recordType}:`, err);
+            // Continue with other categories/files even if one fails
+          }
+        }
+      }
+
       // Step 1: Call backend to prepare transaction
       setTxStatus({ message: 'Preparing transaction...' });
       console.log('[Approval] Step 1: Calling backend to prepare transaction...');
@@ -144,12 +246,15 @@ export default function AccessRequestsPage() {
 
       // Step 2: Check if wallet signing is available and data is present
       const hasUnsignedTxData = data.blockchain?.cardano?.unsignedTxData;
+      const isRealTx = data.blockchain?.cardano?.isRealTx !== false; // Default to true if not specified
       const walletAvailable = typeof window !== 'undefined' && (window as any).cardano?.eternl;
 
       console.log('[Approval] Unsigned TX data available:', !!hasUnsignedTxData);
+      console.log('[Approval] Is real transaction:', isRealTx);
       console.log('[Approval] Wallet available:', walletAvailable);
 
-      if (hasUnsignedTxData && walletAvailable) {
+      // Only attempt transaction if we have real transaction data (not stub mode)
+      if (hasUnsignedTxData && walletAvailable && isRealTx) {
         // Step 3: Sign and submit transaction with wallet
         setTxStatus({ message: 'Connecting to wallet...' });
         console.log('[Approval] Step 2: Signing transaction with wallet...');
@@ -163,6 +268,16 @@ export default function AccessRequestsPage() {
           try {
             console.log('[Transaction] Building consent transaction...');
             console.log('[Transaction] Validator address:', unsignedTxData.validatorAddress);
+
+            // Validate validator address is not a stub
+            if (unsignedTxData.validatorAddress.includes('stub') || 
+                !unsignedTxData.validatorAddress.startsWith('addr_test1') ||
+                unsignedTxData.validatorAddress.length < 50) {
+              throw new Error(
+                'Invalid validator address. The system is running in stub mode. ' +
+                'Please configure Blockfrost API key and compile the Aiken contract to enable real transactions.'
+              );
+            }
 
             // Dynamic import of Mesh SDK
             const { BrowserWallet, Transaction } = await import('@meshsdk/core');
@@ -262,11 +377,30 @@ export default function AccessRequestsPage() {
           throw new Error(result.error || 'Transaction failed');
         }
       } else {
-        // No wallet signing
-        console.log('[Approval] ⚠️ Transaction prepared but not submitted (no wallet)');
-        setTxStatus({
-          message: 'Request approved (transaction prepared but not submitted to blockchain)'
-        });
+        // Check why transaction wasn't submitted
+        if (!isRealTx) {
+          // Stub mode - blockchain not configured
+          console.warn('[Approval] ⚠️ Running in stub mode - blockchain not configured');
+          console.warn('[Approval] To enable real transactions:');
+          console.warn('[Approval]   1. Set BLOCKFROST_API_KEY in .env.local');
+          console.warn('[Approval]   2. Run "aiken build" in contracts/aiken/access_request_validator');
+          setTxStatus({
+            message: 'Request approved (stub mode - blockchain not configured)',
+            error: 'Blockchain integration not configured. Transactions will not be submitted to Cardano. Please configure Blockfrost API key and compile Aiken contract.'
+          });
+        } else if (!walletAvailable) {
+          // No wallet
+          console.log('[Approval] ⚠️ Transaction prepared but not submitted (no wallet)');
+          setTxStatus({
+            message: 'Request approved (transaction prepared but not submitted to blockchain)'
+          });
+        } else {
+          // No transaction data
+          console.log('[Approval] ⚠️ Transaction data not available');
+          setTxStatus({
+            message: 'Request approved (transaction data not available)'
+          });
+        }
 
         setTimeout(() => {
           setAccessRequests((prev) => prev.filter((req) => req.id !== requestId));
@@ -318,10 +452,10 @@ export default function AccessRequestsPage() {
   // Convert record types to format expected by AccessRequestList component
   const convertToRecordTypes = (request: PendingRequest) => {
     const recordTypeMap: Record<string, { label: string; icon: "lab" | "cardiac" | "prescription" | "consultation" }> = {
+      "insurance": { label: "Insurance Documents", icon: "consultation" },
       "lab-results": { label: "Lab Results", icon: "lab" },
-      "cardiac-evaluation": { label: "Cardiac Evaluation", icon: "cardiac" },
-      "prescription-history": { label: "Prescription History", icon: "prescription" },
-      "consultation-notes": { label: "Consultation Notes", icon: "consultation" },
+      "consultations": { label: "Consultation Documents", icon: "consultation" },
+      "prescriptions": { label: "Prescription History", icon: "prescription" },
     };
 
     return request.recordTypes.map((recordType) => ({
@@ -334,7 +468,6 @@ export default function AccessRequestsPage() {
   if (!connected) {
     return (
       <div className="min-h-screen">
-        <Navbar />
         <main className="pt-24 pb-12 px-4 md:px-8">
           <div className="max-w-4xl mx-auto text-center py-20">
             <p className="text-gray-600">Please connect your wallet to view access requests.</p>
@@ -346,8 +479,6 @@ export default function AccessRequestsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-teal-50/20 overflow-y-auto">
-      <Navbar />
-
       <main className="pt-24 pb-12 px-4 md:px-8">
         <div className="max-w-4xl mx-auto space-y-8">
           {/* Page Header */}
@@ -405,8 +536,8 @@ export default function AccessRequestsPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className={`border px-4 py-3 rounded-lg ${txStatus.txHash
-                  ? 'bg-green-50 border-green-200 text-green-700'
-                  : 'bg-blue-50 border-blue-200 text-blue-700'
+                ? 'bg-green-50 border-green-200 text-green-700'
+                : 'bg-blue-50 border-blue-200 text-blue-700'
                 }`}
             >
               <div className="flex items-start gap-3">

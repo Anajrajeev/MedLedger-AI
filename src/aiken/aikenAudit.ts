@@ -101,9 +101,10 @@ export async function recordConsentEvent(
   const validatorCompiled = isValidatorCompiled();
 
   if (!lucidConfigured || !validatorCompiled) {
-    console.log("[Aiken Audit] Using stub mode:");
-    console.log("  - Lucid configured:", lucidConfigured);
-    console.log("  - Validator compiled:", validatorCompiled);
+    console.warn("[Aiken Audit] ⚠️ Using stub mode - blockchain transactions will not be submitted:");
+    console.warn("  - Lucid configured:", lucidConfigured, lucidConfigured ? "✓" : "✗ (Set BLOCKFROST_API_KEY in .env)");
+    console.warn("  - Validator compiled:", validatorCompiled, validatorCompiled ? "✓" : "✗ (Run 'aiken build' in contracts/aiken/access_request_validator)");
+    console.warn("  - unsignedTxData will be included but transaction will fail with stub validator address");
     
     return createStubAuditResult(entry, timestamp, network);
   }
@@ -218,6 +219,26 @@ function createStubAuditResult(
     network,
   });
 
+  // Extract PKH for stub datum
+  const doctorPkh = extractPubKeyHash(entry.doctorWallet);
+  const patientPkh = extractPubKeyHash(entry.patientWallet);
+
+  // Create stub datum (simplified - frontend will need real validator for actual submission)
+  // In stub mode, this won't work, but it allows the frontend to attempt submission
+  // Convert BigInt to string for JSON serialization
+  const stubDatum = {
+    doctorPkh,
+    patientPkh,
+    approved: true,
+    timestamp: timestamp.toString(), // Convert to string instead of BigInt
+    zkProofHash: stringToHex(entry.zkProofHash),
+    requestId: uuidToHex(entry.requestId),
+  };
+
+  // Note: In stub mode, the frontend transaction will likely fail because:
+  // 1. The validator address is fake
+  // 2. The datum format might not match the real validator
+  // But this allows the frontend code path to execute and show proper errors
   return {
     txHash,
     validatorHash,
@@ -225,6 +246,18 @@ function createStubAuditResult(
     network,
     isRealTx: false,
     timestamp,
+    unsignedTxData: {
+      validatorAddress: "addr_test1stub_validator_address_preprod",
+      datum: JSON.stringify(stubDatum), // Simplified - real implementation needs proper serialization
+      metadata: {
+        674: {
+          msg: ["MedLedger Consent Audit Log (STUB)"],
+          request_id: entry.requestId,
+          timestamp: timestamp,
+        }
+      },
+      scriptHash: validatorHash,
+    },
   };
 }
 

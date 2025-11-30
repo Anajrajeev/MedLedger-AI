@@ -36,6 +36,12 @@ export async function getLucidInstance() {
     console.log("[Lucid Config] Initializing Lucid for Preprod Testnet...");
     console.log("[Lucid Config] Blockfrost URL:", BLOCKFROST_URL);
     console.log("[Lucid Config] Blockfrost Project ID:", BLOCKFROST_PROJECT_ID.substring(0, 15) + "...");
+    console.log("[Lucid Config] Full API key length:", BLOCKFROST_PROJECT_ID.length);
+    
+    // Validate API key format (should start with 'preprod' for Preprod testnet)
+    if (!BLOCKFROST_PROJECT_ID.startsWith('preprod') && !BLOCKFROST_PROJECT_ID.startsWith('mainnet')) {
+      console.warn("[Lucid Config] ⚠️ API key doesn't start with 'preprod' or 'mainnet' - may be invalid");
+    }
     
     // Dynamic import to handle ESM module
     const { Blockfrost, Lucid } = await import("lucid-cardano");
@@ -48,6 +54,7 @@ export async function getLucidInstance() {
     );
 
     console.log("[Lucid Config] Provider URL:", BLOCKFROST_URL);
+    console.log("[Lucid Config] Testing Blockfrost connection...");
 
     lucidInstance = await Lucid.new(provider, NETWORK);
     
@@ -57,8 +64,21 @@ export async function getLucidInstance() {
     return lucidInstance;
   } catch (error) {
     console.error("[Lucid Config] Failed to initialize Lucid:", error);
+    
+    // Check if error is due to invalid API key (HTML response instead of JSON)
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes("<!doctype") || errorMessage.includes("Unexpected token '<'")) {
+      console.error("[Lucid Config] ❌ Blockfrost API returned HTML instead of JSON.");
+      console.error("[Lucid Config] This usually means:");
+      console.error("[Lucid Config]   1. Invalid or expired API key");
+      console.error("[Lucid Config]   2. API key doesn't have access to Preprod network");
+      console.error("[Lucid Config]   3. Wrong API endpoint URL");
+      console.error("[Lucid Config] Please check your BLOCKFROST_API_KEY in .env.local");
+      throw new Error("Invalid Blockfrost API key or configuration. Please check your BLOCKFROST_API_KEY environment variable.");
+    }
+    
     console.error("[Lucid Config] Error details:", {
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage,
       stack: error instanceof Error ? error.stack : undefined,
     });
     throw error;

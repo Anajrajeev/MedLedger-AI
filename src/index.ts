@@ -31,9 +31,11 @@ app.use(
   cors({
     origin: [
       process.env.FRONTEND_URL || "http://localhost:3000",
+      process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : null,
+      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
       "http://localhost:3000",
       "http://localhost:3001",
-    ],
+    ].filter(Boolean), // Remove null values
     credentials: true,
   })
 );
@@ -70,17 +72,22 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 MedLedger AI Backend running on http://localhost:${PORT}`);
-  console.log(`📡 Profile API: http://localhost:${PORT}/api/profile`);
-  console.log(`🔐 Permissions API: http://localhost:${PORT}/api/permissions`);
-  console.log(`👤 Register Role API: http://localhost:${PORT}/api/register-role`);
-  console.log(`👨‍⚕️ Doctor Contacts API: http://localhost:${PORT}/api/doctor-contacts`);
-  console.log(`🔓 Access Requests API: http://localhost:${PORT}/api/access`);
-  console.log(`💾 Saved Patients API: http://localhost:${PORT}/api/saved-patients`);
-  console.log(`👁️ Public Profile API: http://localhost:${PORT}/api/public-profile`);
-  console.log(`📁 Records API: http://localhost:${PORT}/api/records`);
-  console.log(`🤖 Agents API: http://localhost:${PORT}/api/agents`);
-});
+// Export app for Vercel serverless functions
+export default app;
+
+// Only start server in local development (not on Vercel)
+if (process.env.VERCEL !== '1' && !process.env.VERCEL_ENV) {
+  app.listen(PORT, () => {
+    console.log(`🚀 MedLedger AI Backend running on http://localhost:${PORT}`);
+    console.log(`📡 Profile API: http://localhost:${PORT}/api/profile`);
+    console.log(`🔐 Permissions API: http://localhost:${PORT}/api/permissions`);
+    console.log(`👤 Register Role API: http://localhost:${PORT}/api/register-role`);
+    console.log(`👨‍⚕️ Doctor Contacts API: http://localhost:${PORT}/api/doctor-contacts`);
+    console.log(`🔓 Access Requests API: http://localhost:${PORT}/api/access`);
+    console.log(`💾 Saved Patients API: http://localhost:${PORT}/api/saved-patients`);
+    console.log(`👁️ Public Profile API: http://localhost:${PORT}/api/public-profile`);
+    console.log(`📁 Records API: http://localhost:${PORT}/api/records`);
+    console.log(`🤖 Agents API: http://localhost:${PORT}/api/agents`);
+  });
+}
 

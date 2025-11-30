@@ -1,860 +1,642 @@
-## MedLedger AI – Cardano Health Agents
+# MedLedger AI - Privacy-Preserving Healthcare Platform
 
-MedLedger AI is a **privacy‑preserving medical data platform** where patients control their encrypted medical records and grant healthcare providers access through **on‑chain consent** and **zero‑knowledge proofs**.  
-All PHI/medical content is encrypted client‑side; the backend and databases only ever see ciphertext.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue.svg)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-14.2-black.svg)](https://nextjs.org/)
+[![Cardano](https://img.shields.io/badge/Cardano-Preprod-orange.svg)](https://cardano.org/)
 
-> **🎉 NEW**: ✅ **Wallet signing fully implemented!** Real Cardano transactions now work with Eternl wallet. See `WALLET_SIGNING_COMPLETE.md` for details.
+## 🎯 Problem Statement
 
----
+Healthcare data management faces critical challenges in today's digital landscape:
 
-### Table of Contents
+- **Privacy Concerns**: Traditional healthcare systems store sensitive patient data in centralized databases, making them vulnerable to breaches and unauthorized access
+- **Lack of Patient Control**: Patients have limited control over who can access their medical records and when
+- **Audit Trail Gaps**: Healthcare providers struggle to maintain immutable, verifiable audit logs of data access and consent
+- **Interoperability Issues**: Fragmented systems make it difficult for different healthcare providers to securely share patient information
+- **Compliance Complexity**: Meeting HIPAA, GDPR, and other regulatory requirements for data privacy and consent management is complex and costly
 
-- **Overview**
-- **Core Features**
-- **Tech Stack**
-- **High‑Level Architecture**
-- **Repository Structure**
-- **Environment Configuration**
-- **Database Schema**
-- **Backend (Express)**
-- **Frontend (Next.js)**
-- **Wallet & Cardano Integration**
-- **Consent, Midnight & Aiken (ZK + Audit)**
-- **Scripts & Tooling**
-- **Development Workflow**
-- **Security & Privacy Model**
-- **Troubleshooting & Known Issues**
-- **Roadmap**
+## 💡 Our Solution
 
----
+**MedLedger AI** is a revolutionary privacy-preserving healthcare platform that empowers patients with complete control over their medical data through blockchain technology and zero-knowledge proofs. Our platform ensures:
 
-## Overview
+- **Patient Sovereignty**: Patients own and control their medical records through Cardano wallet-based identity
+- **Zero-Knowledge Privacy**: Medical data is encrypted client-side and never decrypted by the backend
+- **Immutable Consent**: Blockchain-based audit logs provide tamper-proof records of all access requests and approvals
+- **Private Consent Verification**: Zero-knowledge proofs enable consent verification without revealing sensitive data
+- **Seamless Access Control**: Healthcare providers can request access with full transparency, while patients maintain ultimate control
 
-- **Domain**: Healthcare data access & consent management on Cardano.
-- **Identity**: **Wallet address = user identity** (no passwords).
-- **Encryption**: All profile/record data is encrypted in the browser using AES‑256‑GCM and keys derived from **wallet signatures**.
-- **Backend role**: Store/retrieve ciphertext, orchestrate consent workflow, integrate with Midnight (private smart contracts) and Aiken (public Cardano audit logs).
-- **Database**: Supabase Postgres stores wallet identities, encrypted profiles, access requests, permissions, and saved patients.
+## 🚀 Use Cases
 
-The codebase combines:
+### For Patients
+- **Secure Medical Records Storage**: Store encrypted medical records that only you can decrypt
+- **Granular Access Control**: Approve or reject access requests from doctors, hospitals, or other healthcare providers
+- **Complete Audit Trail**: View all access requests and see exactly who accessed your data and when
+- **Portable Health Records**: Access your medical data from anywhere using your Cardano wallet
 
-- A **Next.js 14** frontend (dashboard, access requests, logs, registration),
-- An **Express/TypeScript** backend (`src/`),
-- A **Postgres schema** (`database/schema.sql`),
-- Integration stubs for **Midnight** and **Aiken** (`src/midnight`, `src/aiken`),
-- Detailed workflow and integration docs in `docs/` and `ACCESS_WORKFLOW.md`.
+### For Healthcare Providers
+- **Request Patient Data Access**: Submit access requests for specific record types (lab results, imaging, prescriptions, etc.)
+- **Verify Consent**: Automatically verify patient consent through blockchain before accessing data
+- **Compliance Ready**: Maintain immutable audit logs for regulatory compliance
+- **Patient Management**: Save patient contacts and manage access requests efficiently
 
----
-
-## Core Features
-
-- **Wallet‑based onboarding**
-  - Eternl (CIP‑30) wallet integration.
-  - Wallet address normalized to Bech32 and used as the **primary user ID**.
-  - Encrypted user profile linked to wallet address and role.
-
-- **Role‑aware profiles**
-  - Roles: **patient**, **doctor**, **hospital**, **other**.
-  - Private encrypted profiles per role:
-    - `patient_profiles`, `doctor_profiles`, `hospital_profiles`, `other_profiles`.
-  - Optional **public profiles** (for doctors/hospitals/others) to display names, credentials, specialties, organization, etc. (no sensitive data).
-
-- **Client‑side encryption**
-  - AES‑256‑GCM encryption via `@noble/ciphers` on the frontend.
-  - Keys derived via HKDF from wallet signatures (`deriveEncryptionKey`).
-  - Backend and DB never see plaintext; they store **ciphertext as BYTEA**.
-
-- **Access request workflow**
-  - Doctors/hospitals request access to specific record types for a patient.
-  - Patients review, approve or reject requests.
-  - Approved requests are mirrored as:
-    - Midnight consent (ZK proofs, stubbed today),
-    - Cardano on‑chain public audit logs via Aiken (stubbed today),
-    - `access_requests` row in Postgres with `midnight_tx`, `zk_proof_hash`, `aiken_tx`.
-
-- **Saved patients & doctor contacts**
-  - Doctors can:
-    - Save patients with aliases (`saved_patients`).
-    - Store encrypted patient names for contacts (`doctor_patient_contacts`).
-  - Backend stores only ciphertext; decryption happens in the client.
-
-- **Audit and logs**
-  - Doctor‑side **Request Logs** page (`app/logs/page.tsx`) shows:
-    - Status of all access requests (pending/approved/rejected),
-    - Blockchain metadata (Midnight tx, Aiken tx) where available.
-
-- **Modern UI**
-  - Glassmorphism dashboard, responsive layout.
-  - Framer Motion animations.
-  - Shadcn‑style UI components under `components/ui`.
+### For Healthcare Organizations
+- **HIPAA/GDPR Compliance**: Built-in privacy controls and audit trails help meet regulatory requirements
+- **Reduced Data Breach Risk**: Client-side encryption means no sensitive data stored on servers
+- **Interoperability**: Standardized blockchain-based consent system works across different healthcare systems
 
 ---
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-- **Frontend**
-  - **Next.js 14** (App Router)
-  - **React 18** with client components
-  - **TypeScript**
-  - **Tailwind CSS**, custom theme in `lib/theme.ts`, `tailwind.config.ts`
-  - **framer-motion** for animations
-  - **zustand** for state management (`hooks/useWalletStore`, `hooks/useRoleStore`)
+### Frontend Framework
+- **Next.js 14** (App Router)
+  - Modern React framework with server-side rendering
+  - File-based routing and API routes
+  - Optimized performance and SEO
 
-- **Backend**
-  - **Node.js / Express 4**
-  - **TypeScript** (compiled via `tsx`)
-  - **pg** for Postgres connection
+- **React 18**
+  - Component-based UI architecture
+  - Client-side state management
+  - Hooks for functional components
 
-- **Blockchain & Crypto**
-  - **Cardano** wallet via CIP‑30 (Eternl)
-  - `@emurgo/cardano-serialization-lib-browser` for address conversion
-  - **Midnight** ZK consent layer (stubbed, `src/midnight/*`)
-  - **Aiken** / Cardano public audit logs (stubbed, `src/aiken/aikenAudit.ts`)
-  - `@noble/ciphers`, `@noble/hashes` for AES‑GCM encryption and HKDF
+- **TypeScript**
+  - Type-safe development
+  - Better IDE support and error catching
+  - Improved code maintainability
 
-- **Infrastructure & Storage (planned / configurable)**
-  - **Supabase Postgres** (required)
-  - IPFS/Filecoin via Infura or Web3.Storage (env vars defined, integration to be wired)
-  - Lit Protocol & AI agents (env vars defined, future extension).
+### Styling & UI
+- **Tailwind CSS**
+  - Utility-first CSS framework
+  - Custom theme configuration
+  - Responsive design system
 
----
+- **Framer Motion**
+  - Smooth animations and transitions
+  - Enhanced user experience
+  - Glassmorphism effects
 
-## High‑Level Architecture
+- **Radix UI**
+  - Accessible component primitives
+  - Unstyled, customizable components
+  - Avatar, Label, Slot components
 
-Conceptual flow:
+- **Lucide React**
+  - Modern icon library
+  - Consistent iconography
+  - Lightweight and customizable
 
-```text
-Browser (Next.js)
-  - Wallet connection (Eternl, CIP-30)
-  - Key derivation (HKDF from wallet signature)
-  - AES-256-GCM encryption/decryption
-  - Calls Express backend with ciphertext only
-            │
-            ▼
-Express Backend (src/index.ts)
-  - REST APIs under /api/*
-  - Manages users, profiles, access requests, permissions, saved patients
-  - Orchestrates Midnight consent + Aiken audit stubs
-            │
-            ▼
-Supabase Postgres (database/schema.sql)
-  - users, public_profiles
-  - patient/doctor/hospital/other_profiles
-  - permissions (Midnight mirror)
-  - doctor_patient_contacts, access_requests, saved_patients
-            │
-            ├── Midnight (private ZK consent - stub)
-            └── Aiken / Cardano (public audit log - stub)
-```
+### State Management
+- **Zustand**
+  - Lightweight state management
+  - Wallet connection state
+  - User role persistence
+  - No boilerplate required
 
-For a detailed end‑to‑end flow of **doctor requests access → patient approves → doctor reads**, see the in‑repo document `ACCESS_WORKFLOW.md` (fully implemented in code).
+### Backend
+- **Node.js / Express 4**
+  - RESTful API server
+  - Middleware support (CORS, JSON parsing)
+  - Error handling and routing
 
----
+- **TypeScript (tsx)**
+  - Type-safe backend code
+  - Fast compilation and execution
+  - Watch mode for development
 
-## Repository Structure
+### Database
+- **PostgreSQL (Supabase)**
+  - Relational database for structured data
+  - BYTEA columns for encrypted data storage
+  - ACID compliance and transactions
+  - Connection pooling for performance
 
-Top‑level:
+### Blockchain & Cryptography
 
-- **`app/`** – Next.js App Router entrypoints and pages.
-  - `layout.tsx` – Root layout and metadata.
-  - `page.tsx` – Main **Dashboard** page (wallet‑gated, recent records, profile bootstrap).
-  - `access-requests/page.tsx` – Combined view:
-    - Doctors/Hospitals: submit access requests to patients.
-    - Patients: view, approve or deny pending access requests.
-  - `logs/page.tsx` – Doctor/hospital **request logs** page (history + blockchain info).
-  - `api/profile/[walletAddress]/` – Next.js API route **wrapper** around backend profile API (bridge between frontend and Express backend where used).
+#### Cardano Integration
+- **Cardano Blockchain**
+  - Public, immutable audit logs
+  - Smart contract execution
+  - Preprod Testnet for development
 
-- **`components/`** – React UI and feature components.
-  - `navbar.tsx` – Top navigation bar, includes `WalletSwitcher`.
-  - `wallet-switcher.tsx` – Eternl wallet connection state, reconnect/switch account, copy address.
-  - `dashboard-header.tsx`, `dashboard-search-bar.tsx`, `medical-record-card.tsx` – Dashboard UI.
-  - `role-selection.tsx` – Role selection overlay (patient/doctor/hospital/other).
-  - `patient-registration-form.tsx`, `doctor-registration-form.tsx`, `hospital-registration-form.tsx`, `other-registration-form.tsx` – Role‑specific encrypted registration.
-  - `request-access-form.tsx` – Doctor/hospital form to request access to patient records.
-  - `access-request-list.tsx`, `action-buttons.tsx`, `on-chain-notice.tsx`, `doctor-card.tsx`, `save-patient-modal.tsx` – Access request UI and CTAs.
-  - `ui/` – Reusable UI atoms (badge, button, card, avatar, input, label).
+- **Aiken Smart Contracts**
+  - **Purpose**: Creates immutable, tamper-proof audit logs on Cardano
+  - **What it does**: Records consent events (doctor, patient, timestamp, ZK proof hash) on-chain
+  - **Why we use it**: Provides public verification of consent without storing sensitive medical data
+  - **Location**: `contracts/aiken/access_request_validator/`
+  - **Status**: ✅ Fully compiled and ready for Preprod Testnet
 
-- **`hooks/`**
-  - `useWalletStore.ts` – Zustand store for wallet state (`connected`, `walletName`, `address`, `api`, error, connect/disconnect).
-  - `useRoleStore.ts` – Stores current user role (`patient | doctor | hospital | other`).
+- **Lucid Cardano**
+  - TypeScript library for Cardano interactions
+  - Transaction building and signing
+  - UTxO querying and management
+  - Validator address computation
 
-- **`lib/`** – Shared frontend utilities and configuration.
-  - `api-config.ts` – Resolves backend API base URL (`NEXT_PUBLIC_API_URL` or `http://localhost:4000`).
-  - `crypto/profileEncryption.ts` – **Client‑side** AES‑256‑GCM encrypt/decrypt + key derivation from wallet signature.
-  - `wallet-utils.ts` – Eternl wallet connection (`connectEternlWallet`), CIP‑30 API, address normalization to Bech32.
-  - `cardano-address.ts` – Hex/Bech32 conversion using Cardano WASM (`@emurgo/cardano-serialization-lib-browser`).
-  - `address-utils.ts` – Address formatting, shortening, readability.
-  - `constants.ts` – Central constants: networks, record types, routes, statuses, error/success messages, etc.
-  - `theme.ts` – Theme tokens, color palette, breakpoints (for Tailwind and UI).
-  - `mock-data.ts` – Example/mock data used in UI.
-  - `utils.ts` – Generic helpers (e.g., `cn`).
+- **Blockfrost API**
+  - Cardano blockchain data provider
+  - Network information and UTxO queries
+  - Transaction submission and tracking
 
-- **`src/`** – **Express backend** (TypeScript).
-  - `index.ts` – Express server entry:
-    - Loads `.env.local`,
-    - Configures CORS for `FRONTEND_URL`/localhost,
-    - Registers routers under `/api/*`,
-    - Provides `/health` endpoint.
-  - `db.ts` – Postgres connection pool and helpers (`query`, `getClient`).
-  - `routes/`
-    - `profile.ts` – Profile + user registration APIs.
-    - `permissions.ts` – Midnight‑style consent endpoints.
-    - `access.ts` – Access request workflow (request, pending, approve, reject, approved, all, release).
-    - `doctor-contacts.ts` – Encrypted doctor‑patient contacts.
-    - `public-profile.ts` – Public doctor/hospital/other profile creation & retrieval.
-    - `register-role.ts` – Create user with role in `users` table.
-    - `savedPatients.ts` – Manage saved patients (aliases) for doctors.
-  - `midnight/`
-    - `midnightClient.ts` – Stubbed Midnight consent mirror for `permissions` table (verify active consent).
-    - `midnightConsent.ts` – Midnight ZK consent integration for access requests (`submitConsentToMidnight`, `verifyConsentOnMidnight`, `revokeConsentOnMidnight`). Currently uses SHA-256 placeholder for ZK proofs.
-  - `aiken/`
-    - `aikenAudit.ts` – **✅ FULLY IMPLEMENTED** Aiken/Cardano audit log integration (`recordConsentEvent`, `verifyAuditEntry`, `queryAuditLogs`, `submitRealConsentTransaction`). Loads compiled validator, prepares real Plutus datum, ready for wallet signing.
-    - `lucidConfig.ts` – Lucid-cardano configuration for Preprod Testnet with Blockfrost.
-    - `validatorLoader.ts` – Loads compiled Aiken validator from `plutus.json`, serializes Plutus data.
-    - `walletSigning.ts` – CIP-30 wallet integration utilities for transaction signing.
-  - `utils/walletAddress.ts` – Backend utilities for wallet address handling/normalization (where used).
+#### Midnight Integration
+- **Midnight Network**
+  - **Purpose**: Private smart contract layer for zero-knowledge consent verification
+  - **What it does**: Generates ZK proofs that prove consent was given without revealing patient/doctor identities or medical data
+  - **Why we use it**: Enables private consent verification while maintaining auditability
+  - **Status**: Stubbed implementation ready for production SDK integration
+  - **Location**: `src/midnight/`
 
-- **`database/`**
-  - `schema.sql` – **Authoritative Postgres schema** for all tables (see detailed section below).
-  - `reset-database.sql` – Drops and recreates schema for local resets.
+#### Wallet Integration
+- **CIP-30 Standard**
+  - Cardano wallet communication protocol
+  - Eternl wallet support
+  - Transaction signing and address management
 
-- **`scripts/`**
-  - `setup-database.js` – Programmatic execution of `schema.sql` and related setup.
-  - `reset-database.js` – Drops and recreates DB using `reset-database.sql`.
-  - `test-db-connection.js` – Verifies `DATABASE_URL` connectivity.
-  - `check-users.js` – Helper for inspecting `users` table contents.
-  - `check-setup.js` – Pre‑flight checks invoked by `npm run dev`.
-  - `convert-hex-to-bech32.js` – Cardano address conversion (hex → Bech32) for stored addresses.
-  - `encode-db-password.js` – URL‑encodes DB passwords for use in `DATABASE_URL`.
-  - `test-dns.js` – DNS diagnostic script for connectivity issues.
-  - `test-aiken-midnight.js` – Full integration test for Aiken and Midnight blockchain integrations.
-  - `test-blockfrost-aiken.js` – **✅ ALL TESTS PASSING** Blockfrost & Aiken integration test (6/6 tests pass).
-  - `verify-approval.js` – Verifies blockchain integrations ran during patient approval.
-  - `create-test-users.js` – Creates test doctor and patient users for integration testing.
-  - `migrate-blockchain-columns.js` – Adds blockchain-related columns to `access_requests` table.
+- **Cardano Serialization Libraries**
+  - Address format conversion (Hex ↔ Bech32)
+  - Transaction serialization
+  - Browser and Node.js support
 
-- **`docs/`**
-  - `BACKEND_SETUP.md` – Detailed backend setup, encryption overview (earlier iteration, still conceptually valid).
-  - `BACKEND_QUICK_START.md` – Short backend setup and example curl flows.
-  - `DATABASE_CONNECTION_FIX.md` – Supabase IPv4/IPv6 and Session Pooler instructions.
+### Encryption & Security
+- **@noble/ciphers**
+  - AES-256-GCM encryption
+  - Client-side encryption/decryption
+  - Authenticated encryption with associated data
 
-- **Other project files**
-  - `ACCESS_WORKFLOW.md` – Full narrative/documentation of the access request workflow and its mapping to code.
-  - `INTEGRATION.md` – **Frontend integration guide** (profile encryption, permissions, shared profile endpoints) for the older route design; complements current implementation.
-  - `README_BACKEND.md` – Backend‑only overview; this README supersedes it but all points remain accurate for the Express layer.
-  - `DEBUGGING_WALLET_ISSUE.md` – Notes on typical wallet integration/debugging issues (ensure Eternl, address formats, etc.).
-  - `env.example` – Canonical list of environment variables.
-  - `tailwind.config.ts`, `postcss.config.mjs` – Styling configuration.
-  - `next.config.mjs` – Next.js config (edge/runtime settings, etc.).
-  - `tsconfig*.json` – TypeScript configuration for frontend and backend.
-  - `types/` – Shared TypeScript types, including CIP‑30 `CardanoWalletApi` and window typings.
+- **@noble/hashes**
+  - HKDF key derivation
+  - SHA-256 hashing
+  - Cryptographic primitives
 
----
+- **Client-Side Encryption**
+  - Keys derived from wallet signatures
+  - Backend never sees plaintext
+  - Zero-knowledge architecture
 
-## Environment Configuration
+### AI & Agents
 
-All environment variables are documented in **`env.example`**. Typical local development uses a `.env.local` file at the repo root.
+#### Masumi Network
+- **Purpose**: Decentralized AI agent network for payments and identity management
+- **What it does**: 
+  - Handles payments for AI agent services
+  - Provides identity verification
+  - Manages agent registry
+- **Why we use it**: Enables monetization and identity management for AI healthcare agents
+- **Status**: Optional integration, can be enabled via environment variables
+- **Location**: `src/masumi/`
 
-- **Cardano / Blockchain**
-  - `NEXT_PUBLIC_CARDANO_NETWORK` – `mainnet | testnet | preview` (frontend network awareness).
-  - `NEXT_PUBLIC_CONTRACT_ADDRESS` – Access control smart contract address.
-  - `NEXT_PUBLIC_BLOCKFROST_PROJECT_ID`, `BLOCKFROST_API_KEY` – Blockfrost API credentials.
+#### AI Agents
+- **Explainer Agent**: Explains medical records and test results in plain language
+- **Appointment Agent**: Helps schedule and manage medical appointments
+- **Insurance Agent**: Assists with insurance claims and coverage questions
+- **Architecture**: Agents are separate services deployed independently, integrated via REST APIs
 
-- **IPFS / Storage (planned)**
-  - `NEXT_PUBLIC_IPFS_GATEWAY`
-  - `IPFS_PROJECT_ID`, `IPFS_PROJECT_SECRET`
-  - Optional `WEB3_STORAGE_TOKEN`
+### Storage
+- **Backblaze B2**
+  - Cloud object storage for medical records
+  - Encrypted file storage
+  - Scalable and cost-effective
 
-- **Lit Protocol (future E2E key management)**
-  - `NEXT_PUBLIC_LIT_NETWORK` – `serrano` (testnet) or `cayenne` (mainnet).
+- **IPFS/Filecoin** (Planned)
+  - Decentralized file storage
+  - Content-addressed storage
+  - Redundancy and availability
 
-- **AI / Agents**
-  - `OPENAI_API_KEY`, `OPENAI_ORGANIZATION`
-  - Optional `ANTHROPIC_API_KEY`
-
-- **Database (required)**
-  - `DATABASE_URL` – Supabase Postgres connection string.
-    - **Important**: URL‑encode special characters in the password. Use `scripts/encode-db-password.js` if needed.
-    - For IPv4‑only environments, use the **Session Pooler** connection string as explained in `docs/DATABASE_CONNECTION_FIX.md`.
-
-- **Auth & app secrets**
-  - `NEXTAUTH_SECRET`, `NEXTAUTH_URL` – Reserved for NextAuth.js (if/when used).
-  - `APP_SECRET` – Application secret for signing tokens.
-  - `ENCRYPTION_KEY` – Legacy/general encryption key; not used for profile encryption (which is wallet‑derived).
-
-- **Backend / API**
-  - `PORT` – Express backend port (default `4000`).
-  - `NEXT_PUBLIC_API_URL` – Base URL for frontend → backend calls (`http://localhost:4000` by default).
-  - `FRONTEND_URL` – Origin allowed in CORS for Express backend (e.g. `http://localhost:3000`).
-
-- **Monitoring / Feature flags**
-  - `SENTRY_DSN`, `NEXT_PUBLIC_GA_ID` – Optional monitoring/analytics.
-  - `NEXT_PUBLIC_ENABLE_AI_FEATURES`, `NEXT_PUBLIC_ENABLE_INSURANCE_AUTOMATION`, `NEXT_PUBLIC_ENABLE_DEMO_MODE` – Feature toggles.
-
-For the fastest local start, copy `env.example` to `.env.local` and adjust only:
-
-- `DATABASE_URL`
-- `NEXT_PUBLIC_API_URL`
-- `FRONTEND_URL`
-- Any API keys you need for your environment.
+### Development Tools
+- **ESLint**: Code linting and quality
+- **PostCSS**: CSS processing
+- **Autoprefixer**: Browser compatibility
+- **ts-node/tsx**: TypeScript execution
 
 ---
 
-## Database Schema (Postgres)
+## 📋 Prerequisites
 
-Defined in `database/schema.sql`. Key tables:
+Before setting up MedLedger AI, ensure you have the following installed:
 
-- **`public.users`**
-  - `id` (UUID, primary key, default `gen_random_uuid()`),
-  - `wallet_address` (TEXT, **unique**, primary identity),
-  - `role` (`patient | doctor | hospital | other`),
-  - `created_at`, `last_login`.
-  - Indexed on `wallet_address`, `role`, `last_login`.
+### Required Software
+1. **Node.js 18+** 
+   - Download from [nodejs.org](https://nodejs.org/)
+   - Verify installation: `node --version`
 
-- **`public.public_profiles`**
-  - Public‑facing info for **doctors/hospitals/others** only.
-  - Columns: `wallet_address` (FK → `users`), `display_name`, `credentials`, `specialty`, `organization`, `role`, `created_at`, `updated_at`.
-  - Accessed by `/api/public-profile/*` routes and used in UI to show doctor/hospital names without decrypting profiles.
+2. **npm** (comes with Node.js)
+   - Verify installation: `npm --version`
 
-- **Encrypted profile tables** (one per role; all share pattern):
-  - `public.patient_profiles`
-  - `public.doctor_profiles`
-  - `public.hospital_profiles`
-  - `public.other_profiles`
-  - Columns: `id`, `wallet_address` (FK → `users`), `profile_cipher` (BYTEA, **encrypted**), `created_at`.
-  - Backend **never decrypts** `profile_cipher`; it only stores and returns ciphertext.
+3. **Git**
+   - Download from [git-scm.com](https://git-scm.com/)
+   - Verify installation: `git --version`
 
-- **`public.permissions`** – Midnight consent mirror
-  - Represents Midnight blockchain ZK consent records.
-  - Columns:
-    - `patient_wallet`, `requester_wallet`, `resource_id`, `scope`,
-    - `expires_at`, `created_at`,
-    - `midnight_tx_id`, `midnight_proof`,
-    - `status` (`active | revoked | expired`).
-  - Indexed on `(patient_wallet, requester_wallet, resource_id)`, `status`, `expires_at`.
-  - Queried by `src/midnight/midnightClient.ts` for **verifyConsentOnMidnight`.
+### Required Services & Accounts
 
-- **`public.doctor_patient_contacts`**
-  - Saves patient wallet + encrypted patient name per doctor.
-  - Columns: `doctor_wallet` (FK → `users`), `patient_wallet`, `patient_name_cipher` (BYTEA), `created_at`.
-  - Unique: `(doctor_wallet, patient_wallet)`.
-  - Used by `/api/doctor-contacts/*`.
+1. **Supabase Account** (Free tier available)
+   - Sign up at [supabase.com](https://supabase.com)
+   - Create a new project
+   - Get your database connection string
 
-- **`public.access_requests`**
-  - Core access request workflow.
-  - Columns:
-    - `doctor_wallet` (FK → `users`),
-    - `patient_wallet` (TEXT – patient may or may not be registered yet),
-    - `patient_name` (optional plain text for convenience),
-    - `record_types` (TEXT[]; e.g. `['lab-results', 'cardiac-evaluation']`),
-    - `reason` (TEXT),
-    - `status` (`pending | approved | rejected`),
-    - `midnight_tx`, `zk_proof_hash`, `aiken_tx`,
-    - `validator_hash`, `validator_address`, `cardano_network` (Aiken blockchain integration),
-    - `created_at`, `approved_at`.
-  - Indexed for doctor/patient/status queries.
+2. **Eternl Wallet** (Browser Extension)
+   - Install from [eternl.io](https://eternl.io)
+   - Create or import a wallet
+   - Switch to Preprod Testnet for development
 
-- **`public.saved_patients`**
-  - Doctor’s saved patients list with aliases.
-  - Columns: `doctor_wallet` (FK → `users`), `patient_wallet`, `alias`, `created_at`.
-  - Unique: `(doctor_wallet, patient_wallet)`.
+3. **Blockfrost API Key** (Optional, for blockchain features)
+   - Sign up at [blockfrost.io](https://blockfrost.io)
+   - Create a Preprod project
+   - Get your API key
 
-All these tables are created/dropped/reset via `scripts/setup-database.js` and `scripts/reset-database.js`, which execute the SQL in `database/schema.sql`/`reset-database.sql`.
+4. **Backblaze B2 Account** (Optional, for file storage)
+   - Sign up at [backblaze.com](https://www.backblaze.com)
+   - Create a bucket
+   - Generate application keys
+
+### Optional Services
+- **Masumi Network Account** (for AI agent payments)
+- **Infura Account** (for IPFS gateway)
+- **Web3.Storage Account** (alternative IPFS storage)
 
 ---
 
-## Backend (Express) – API Summary
+## 🚀 Quick Setup Guide
 
-Entry: `src/index.ts`.
+Follow these steps to get MedLedger AI running on your local machine:
 
-- **Base URL**: `http://localhost:4000`
-- **Health**: `GET /health` → `{ status: "ok", message: "MedLedger AI Backend" }`
-
-Registered routers:
-
-- **Profile (`src/routes/profile.ts`) – `/api/profile`**
-  - `GET /api/profile/:walletAddress`
-    - Looks up user in `public.users` by wallet address.
-    - If not found → `{ exists: false }`.
-    - If found but no profile row → `{ exists: true, role }`.
-    - If profile exists → `{ exists: true, role, cipher: "<base64>" }`.
-    - Cipher is `profile_cipher` from the role‑specific table, converted BYTEA→base64.
-  - `POST /api/profile`
-    - Creates or updates encrypted profile for a given `walletAddress` and `role`.
-    - Validates role; inserts/updates both `users` row and role‑specific profile table.
-    - Expects base64 ciphertext; backend stores raw bytes in BYTEA.
-
-- **Permissions (`src/routes/permissions.ts`) – `/api/permissions`**
-  - Provides an abstraction similar to the older `/api/permissions/*` documented in `INTEGRATION.md`:
-    - `POST /request` – record an access request intent (pre‑consent).
-    - `POST /approve` – patient approves; uses `submitConsentToMidnight` stub and writes to `permissions`.
-    - `POST /revoke` – patient revokes; updates `permissions.status`.
-  - Current production flows primarily use the more detailed `access` routes (below), but permissions captures the generic Midnight consent model.
-
-- **Public Profiles (`src/routes/public-profile.ts`) – `/api/public-profile`**
-  - `GET /api/public-profile/:walletAddress`
-    - Returns `{ exists: false }` if no public profile.
-    - Otherwise returns public fields: `displayName`, `credentials`, `specialty`, `organization`, `role`, timestamps.
-  - `GET /api/public-profile/batch?wallets=addr1,...`
-    - Batch retrieval for multiple wallet addresses.
-  - `POST /api/public-profile`
-    - Upsert public profile for doctors/hospitals/others.
-    - Enforces that the user exists in `users` and role matches.
-
-- **Register Role (`src/routes/register-role.ts`) – `/api/register-role`**
-  - Creates or updates a user record in `public.users` for a given wallet + role.
-  - Called via frontend after role selection.
-
-- **Doctor Contacts (`src/routes/doctor-contacts.ts`) – `/api/doctor-contacts`**
-  - `GET /api/doctor-contacts/:doctorWallet`
-    - Ensures `doctorWallet` exists and has role `doctor`.
-    - Returns list of contacts with `patientWallet`, `patientNameCipher` (base64), `createdAt`.
-  - `POST /api/doctor-contacts`
-    - Saves or updates a doctor’s patient contact.
-    - Supports **development shortcut** where a plain `patientName` is accepted and encrypted on client in production.
-
-- **Saved Patients (`src/routes/savedPatients.ts`) – `/api/saved-patients`**
-  - `GET /api/saved-patients?doctorWallet=...`
-  - `POST /api/saved-patients/add`
-  - `DELETE /api/saved-patients/delete/:id?doctorWallet=...`
-  - Uses `saved_patients` table for quick‑select doctor workflows.
-
-- **Access Requests (`src/routes/access.ts`) – `/api/access`**
-  - (Fully described in `ACCESS_WORKFLOW.md` and reflected in `app/access-requests/page.tsx` and `app/logs/page.tsx`.)
-  - Typical endpoints:
-    - `POST /api/access/request` – Doctor/hospital creates a request:
-      - Validates roles, existing users, uniqueness of pending requests.
-      - Writes to `access_requests`.
-    - `GET /api/access/pending?wallet=PATIENT_WALLET` – Patient views all pending requests.
-    - `POST /api/access/approve` – Patient approves; triggers:
-      - `submitConsentToMidnight` (stub) → `midnight_tx`, `zk_proof_hash`.
-      - `recordConsentEvent` via Aiken stub → `aiken_tx`.
-      - Updates `access_requests` row.
-    - `POST /api/access/reject` – Patient rejects (status set to `rejected`).
-    - `GET /api/access/approved?wallet=DOCTOR_WALLET` – Doctor lists approved requests.
-    - `GET /api/access/all?wallet=DOCTOR_WALLET` – Doctor fetches all their requests (used by logs page).
-    - `POST /api/access/release` – Doctor requests data release:
-      - Verifies consent via Midnight + Aiken stubs.
-      - Reads patient encrypted profile.
-      - Returns `encryptedData` (base64) and blockchain metadata.
-
-Error handling: centralized 404 and 500 handlers in `src/index.ts` log errors but never leak secrets.
-
----
-
-## Frontend (Next.js) – Key Flows
-
-### 1. Wallet connection & dashboard bootstrap (`app/page.tsx`)
-
-- Uses `useWalletStore` and `connectEternlWallet` to:
-  - Detect Eternl,
-  - Auto‑reconnect if `connectedWallet` is set in `localStorage`,
-  - Normalize wallet address to Bech32 via `cardano-address.ts`.
-- On connection:
-  - Calls backend: `GET {API_URL}/api/profile/:walletAddress`.
-  - If `{ exists: false }` → show **Role Selection** overlay.
-  - If `{ exists: true, role, cipher? }`:
-    - Sets role in `useRoleStore`.
-    - If `cipher` present:
-      - Calls `deriveEncryptionKey(walletAddress, api)` to get AES key.
-      - Decrypts profile via `decryptProfile(cipher, key)`.
-      - For non‑patient roles, optionally enriches UI with `public-profile` display name.
-    - If no `cipher` → show role‑specific Registration Form.
-
-### 2. Registration flow
-
-1. User connects wallet and passes role selection.
-2. Role‑specific form collects structured profile data.
-3. Frontend:
-   - Derives encryption key from wallet signature.
-   - Encrypts profile JSON via `encryptProfile`.
-   - Sends base64 cipher to backend with wallet + role.
-4. Backend stores cipher bytes in appropriate profile table and ensures user exists in `users`.
-
-### 3. Access requests page (`app/access-requests/page.tsx`)
-
-- If **doctor/hospital**:
-  - Show `RequestAccessForm`:
-    - Form posts to `POST /api/access/request` with `doctorWallet`, `patientWallet`, `recordTypes`, `reason`.
-    - Uses `saved-patients` endpoints to manage alias list.
-- If **patient**:
-  - Fetch pending requests from `GET /api/access/pending?wallet=...`.
-  - For each doctor/hospital wallet, fetch public display data via `GET /api/public-profile/:doctorWallet`.
-  - Show request cards with:
-    - Doctor identity (public profile or fallback to wallet prefix),
-    - Requested record types (mapped to labels/icons),
-    - Reason.
-  - Approve/Reject buttons call `POST /api/access/approve` or `POST /api/access/reject`.
-
-### 4. Request logs page (`app/logs/page.tsx`)
-
-- Visible to **doctor/hospital** roles only.
-- Calls `GET /api/access/all?wallet=...`.
-- Displays:
-  - Patient name/wallet (may be plain `patientName` or derived client‑side),
-  - Record types and reason,
-  - Status badge,
-  - Created/approved timestamps,
-  - Midnight and Aiken transaction IDs if present.
-
----
-
-## Wallet & Cardano Integration
-
-- **Wallet adapter**: Eternl via `window.cardano.eternl` (CIP‑30).
-- **Connection helper**: `lib/wallet-utils.ts`
-  - `connectEternlWallet(forceReconnect?: boolean)`:
-    - Calls `eternl.enable()` to obtain `CardanoWalletApi`.
-    - Fetches address via `getUsedAddresses`, `getUnusedAddresses`, or `getChangeAddress`.
-    - Normalizes to Bech32 using `normalizeAddressToBech32` (`cardano-address.ts`).
-  - Handles:
-    - User cancellation,
-    - Reconnect flows to switch accounts,
-    - Logging of address format/length.
-- **WalletSwitcher component**:
-  - Shows current connection, shortened Bech32 address, copy button, reconnect/switch and disconnect actions.
-  - Uses `connectEternlWallet(true)` to prompt account reselection in Eternl.
-
-Address utilities:
-
-- `cardano-address.ts` – uses Cardano WASM to convert Hex↔Bech32.
-- `address-utils.ts` – checks if bech32, formats hex for display, and provides `shortenAddress`.
-
----
-
-## Consent, Midnight & Aiken (ZK + Audit)
-
-The implementation provides a realistic blockchain integration layer with **Lucid** for Cardano and a deterministic ZK-proof pipeline for Midnight. The system is configured for **Cardano Preprod Testnet** only.
-
-### Aiken Smart Contract (`contracts/aiken/access_request_validator/`)
-
-A fully-defined Aiken validator that creates immutable audit logs:
-
-- **Validator**: `validators/access_request.ak`
-- **Configuration**: `aiken.toml`
-- **Build output**: `plutus.json`
-
-**Contract Datum (ConsentDatum)**:
-```
-doctor_pkh: PubKeyHash      // Doctor wallet hash
-patient_pkh: PubKeyHash     // Patient wallet hash
-approved: Bool              // Consent status
-timestamp: Int              // Unix timestamp (ms)
-zk_proof_hash: ByteArray    // Midnight ZK proof hash
-request_id: ByteArray       // Request UUID
-```
-
-**Build the contract**:
-```bash
-cd contracts/aiken/access_request_validator
-aiken build
-```
-
-### Backend Integration
-
-- **Midnight (`src/midnight/midnightConsent.ts`)**
-  - `submitConsentToMidnight(consent)`: Generates deterministic SHA-256 ZK proof hashes
-  - `verifyConsentOnMidnight(verification)`: Verifies proof existence and validity
-  - `verifyZKProofHash(consent, expectedHash)`: Recomputes and verifies proof
-  - Returns: `{ txId, zkProofHash, proofData, isRealProof }`
-
-- **Aiken / Cardano (`src/aiken/aikenAudit.ts`)**
-  - `recordConsentEvent(entry)`: Records audit log via Lucid
-  - `verifyAuditEntry(verification)`: Queries blockchain + database
-  - `queryAuditLogs(walletAddress, role)`: Lists all audit entries
-  - Returns: `{ txHash, validatorHash, validatorAddress, network, isRealTx }`
-
-- **Lucid Configuration (`src/aiken/lucidConfig.ts`)**
-  - Connects to Blockfrost API for Preprod Testnet
-  - Singleton Lucid instance management
-  - Network: **Preprod only** (DO NOT use mainnet)
-
-### Database Columns
-
-The `access_requests` table stores blockchain references:
-- `midnight_tx`: Midnight transaction ID
-- `zk_proof_hash`: ZK proof hash (SHA-256)
-- `aiken_tx`: Cardano transaction hash
-- `validator_hash`: Aiken validator script hash
-- `validator_address`: Validator address on Cardano
-- `cardano_network`: Network used (default: preprod)
-
-### Enabling Full Blockchain Integration
-
-**✅ STATUS: FULLY IMPLEMENTED AND READY**
-
-All blockchain integration is now complete and tested. See `AIKEN_INTEGRATION_COMPLETE.md` for full details.
-
-1. **Blockfrost API** (✅ Configured):
-   - Sign up at [blockfrost.io](https://blockfrost.io) for Preprod
-   - Set in `.env.local`:
-     ```env
-     BLOCKFROST_API_KEY=preprodXXXXXXXXXXXX
-     ```
-
-2. **Aiken Contract** (✅ Compiled):
-   - Contract already compiled at `contracts/aiken/access_request_validator/plutus.json`
-   - Validator hash: `62e06b1b9f17b2575831e93eadc7c1c06e653b7cfaecd62082aecc46`
-   - Validator address: `addr_test1wraa5nahuldlygl73j479uan4w8lzyw95hfj42rjefvvt0sqc75ch`
-   - To rebuild:
-     ```bash
-     cd contracts/aiken/access_request_validator
-     aiken build
-     ```
-
-3. **Database Migration** (✅ Applied):
-   - Blockchain columns already added to `access_requests` table
-   - To reapply:
-     ```bash
-     npm run db:migrate
-     ```
-
-4. **Testing** (✅ All Passing):
-   ```bash
-   # Test Blockfrost & Aiken integration (6/6 tests pass)
-   npm run test:blockfrost
-   
-   # Test full blockchain workflow
-   npm run test:blockchain
-   
-   # Verify approval workflow
-   npm run verify:approval
-   ```
-
-### To Submit Real Transactions
-
-The infrastructure is ready. To submit real transactions to Cardano Preprod:
-
-1. **Frontend Wallet Signing** (Recommended):
-   - Use provided `src/aiken/walletSigning.ts` utilities
-   - Connect Eternl wallet (set to Preprod network)
-   - Call `submitRealConsentTransaction()` with wallet API
-
-2. **Get Testnet ADA**:
-   - Visit: https://docs.cardano.org/cardano-testnet/tools/faucet/
-   - Request test ADA for your Eternl wallet
-   - Ensure wallet is on Preprod network
-
-3. **View Transactions**:
-   - Explorer: https://preprod.cardanoscan.io
-   - Check validator address for UTxOs
-
-**See `AIKEN_INTEGRATION_COMPLETE.md` for complete implementation guide.**
-
-### Testing
+### Step 1: Clone the Repository
 
 ```bash
-# Test Blockfrost & Aiken integration (ALL TESTS PASSING ✅)
-npm run test:blockfrost
-
-# Run full blockchain integration tests
-npm run test:blockchain
-
-# Verbose mode
-npm run test:blockchain:verbose
-
-# Verify specific approval
-npm run verify:approval [requestId]
+git clone <repository-url>
+cd "MedLedger AI"
 ```
 
-**Test Results:**
-- ✅ Blockfrost API Connection
-- ✅ Aiken Validator Loading
-- ✅ Lucid Initialization  
-- ✅ Validator Address Computation
-- ✅ Validator UTxO Query
-- ✅ Datum Serialization
-
-**Total: 6 passed, 0 failed**
-
----
-
-## Scripts & Tooling
-
-Defined in `package.json`:
-
-- **Frontend / Next.js**
-  - `npm run dev` – Runs `scripts/check-setup.js` then `next dev` on port 3000.
-  - `npm run build` – `next build`.
-  - `npm run start` – `next start`.
-  - `npm run lint` – `next lint`.
-
-- **Backend / Express**
-  - `npm run server:dev` – `tsx watch src/index.ts` (live‑reload for backend).
-  - `npm run server:start` – `tsx src/index.ts` (production style).
-
-- **Database utilities**
-  - `npm run db:setup` – `node scripts/setup-database.js`.
-  - `npm run db:reset` – `node scripts/reset-database.js`.
-  - `npm run db:test` – `node scripts/test-db-connection.js`.
-  - `npm run db:check-users` – `node scripts/check-users.js`.
-  - `npm run db:convert-addresses` – `node scripts/convert-hex-to-bech32.js`.
-  - `npm run db:migrate` – `node scripts/migrate-blockchain-columns.js`.
-
-- **Blockchain testing & verification**
-  - `npm run test:blockchain` – Full Aiken + Midnight integration test.
-  - `npm run test:blockchain:verbose` – Verbose test output.
-  - `npm run test:blockfrost` – **✅ ALL TESTS PASSING** Blockfrost & Aiken integration test (6/6 pass).
-  - `npm run verify:approval` – Verify blockchain integrations ran during approval.
-  - `npm run test:create-users` – Create test doctor and patient users.
-  - `npm run db:migrate` – Add blockchain columns to existing database.
-
-- **Blockchain testing**
-  - `npm run test:blockchain` – Test Aiken & Midnight integration.
-  - `npm run test:blockchain:verbose` – Verbose blockchain tests.
-
-Standalone scripts (manually callable):
-
-- `scripts/encode-db-password.js` – Encode DB password for safe URL embedding.
-- `scripts/test-dns.js` – Basic DNS diagnostics for Supabase/DB hostnames.
-- `scripts/test-aiken-midnight.js` – Full blockchain integration test suite.
-- `scripts/migrate-blockchain-columns.js` – Database migration for blockchain fields.
-
-Refer to inline comments within each script for exact behavior and logging.
-
----
-
-## Development Workflow
-
-### 1. Prerequisites
-
-- Node.js 18+
-- A Supabase (or compatible Postgres) instance.
-- Eternl Cardano wallet browser extension installed (for frontend flows).
-
-### 2. Install dependencies
+### Step 2: Install Dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Configure environment
+This will install all required packages including:
+- Next.js and React dependencies
+- Express backend dependencies
+- Cardano and blockchain libraries
+- UI components and styling libraries
 
-1. Copy `env.example` to `.env.local`.
-2. Set at minimum:
-   - `DATABASE_URL`
-   - `NEXT_PUBLIC_API_URL=http://localhost:4000`
-   - `FRONTEND_URL=http://localhost:3000`
-3. Optionally configure Blockfrost, IPFS, AI, monitoring keys as needed.
+### Step 3: Configure Environment Variables
 
-### 4. Set up the database
+1. **Copy the example environment file:**
+   ```bash
+   cp env.example .env.local
+   ```
+
+2. **Open `.env.local` in your editor** and configure the following:
+
+   **Required Variables:**
+   ```env
+   # Database (REQUIRED)
+   DATABASE_URL=postgresql://postgres:your_password@your-project-ref.supabase.co:5432/postgres
+   
+   # API URLs (REQUIRED)
+   NEXT_PUBLIC_API_URL=http://localhost:4000
+   FRONTEND_URL=http://localhost:3000
+   PORT=4000
+   ```
+
+   **Important Notes:**
+   - URL-encode special characters in your database password (use `*` = `%2A`, `@` = `%40`, `:` = `%3A`)
+   - Use the **Session Pooler** connection string if you're on Windows (port 6543 instead of 5432)
+   - See `docs/DATABASE_CONNECTION_FIX.md` for Supabase connection troubleshooting
+
+   **Optional Variables (for full functionality):**
+   ```env
+   # Cardano Blockchain
+   NEXT_PUBLIC_CARDANO_NETWORK=preprod
+   BLOCKFROST_API_KEY=your_blockfrost_api_key
+   NEXT_PUBLIC_BLOCKFROST_PROJECT_ID=your_project_id
+   
+   # Backblaze B2 Storage
+   B2_ACCOUNT_ID=your_b2_account_id
+   B2_APPLICATION_KEY=your_b2_application_key
+   B2_BUCKET_NAME=medledger-patient-records
+   B2_BUCKET_ID=your_bucket_id
+   
+   # Masumi AI Agents (Optional)
+   MASUMI_ENABLED=false
+   EXPLAINER_AGENT_ENDPOINT=https://your-explainer-agent.example.com
+   APPOINTMENT_AGENT_ENDPOINT=https://your-appointment-agent.example.com
+   INSURANCE_AGENT_ENDPOINT=https://your-insurance-agent.example.com
+   ```
+
+### Step 4: Set Up the Database
+
+1. **Run the database setup script:**
+   ```bash
+   npm run db:setup
+   ```
+
+   This will:
+   - Create all required tables (users, profiles, access_requests, etc.)
+   - Set up indexes for performance
+   - Configure database schema
+
+2. **Verify database connection:**
+   ```bash
+   npm run db:check-users
+   ```
+
+   If you encounter connection issues:
+   - Check your `DATABASE_URL` is correct
+   - Ensure special characters are URL-encoded
+   - Try using Session Pooler connection string (port 6543)
+
+### Step 5: Start the Backend Server
+
+Open a terminal and run:
 
 ```bash
-npm run db:setup
-# or, to reset from scratch
-npm run db:reset
-```
-
-You can verify connectivity:
-
-```bash
-npm run db:test
-```
-
-If you encounter IPv4 issues on Windows, follow `docs/DATABASE_CONNECTION_FIX.md` to switch to the Supabase **Session Pooler** connection string.
-
-### 5. Run backend and frontend
-
-In two terminals:
-
-```bash
-# Terminal 1 – Express backend (port 4000)
 npm run server:dev
+```
 
-# Terminal 2 – Next.js frontend (port 3000)
+You should see:
+```
+🚀 MedLedger AI Backend running on http://localhost:4000
+📡 Profile API: http://localhost:4000/api/profile
+🔐 Permissions API: http://localhost:4000/api/permissions
+...
+```
+
+**Verify backend is running:**
+- Open browser: `http://localhost:4000/health`
+- Should return: `{"status":"ok","message":"MedLedger AI Backend"}`
+
+### Step 6: Start the Frontend
+
+Open a **new terminal** (keep backend running) and run:
+
+```bash
 npm run dev
 ```
 
-Visit:
+You should see:
+```
+✓ Ready in X seconds
+○ Local: http://localhost:3000
+```
 
-- Frontend dashboard: `http://localhost:3000`
-- Backend health check: `http://localhost:4000/health`
+### Step 7: Access the Application
 
-### 6. Typical dev flow
+1. **Open your browser** and navigate to: `http://localhost:3000`
 
-- Connect Eternl wallet and confirm the dashboard loads.
-- Register as patient or doctor/hospital/other.
-- As a doctor/hospital:
-  - Use **Access Requests** page to submit a new request.
-  - Check **Request Logs** page for status.
-- As a patient:
-  - Use **Access Requests** page to approve/reject incoming requests.
+2. **Install Eternl Wallet** (if not already installed):
+   - Visit [eternl.io](https://eternl.io)
+   - Install the browser extension
+   - Create or import a wallet
+   - **Important**: Switch to **Preprod Testnet** in wallet settings
 
-For backend‑only testing, `ACCESS_WORKFLOW.md` contains ready‑to‑use `curl` examples for each step.
+3. **Connect Your Wallet**:
+   - Click "Connect Wallet" on the dashboard
+   - Approve the connection in Eternl
+   - Your wallet address will be displayed
 
----
+4. **Register Your Account**:
+   - Select your role (Patient, Doctor, Hospital, or Other)
+   - Fill in your profile information
+   - Submit to create your encrypted profile
 
-## Security & Privacy Model
+### Step 8: Test the Application
 
-- **Client‑side encryption only**
-  - Encryption key derived from wallet signature (HKDF‑SHA256).
-  - AES‑256‑GCM payload format:
-    - \[IV (12 bytes)] | \[TAG (16 bytes)] | \[CIPHERTEXT].
-  - Backend only sees base64‑encoded concatenation of this payload.
+**As a Patient:**
+1. Connect wallet and register as a patient
+2. View the dashboard with your profile
+3. Navigate to "Access Requests" to see any pending requests
 
-- **Backend never decrypts**
-  - No symmetric keys stored server‑side.
-  - Profile and other sensitive fields are always BYTEA/ciphertext in DB.
-
-- **Wallet‑based identity**
-  - No username/passwords; only Cardano wallet addresses.
-  - Uniqueness enforced at DB level on `users.wallet_address`.
-
-- **Consent & audit**
-  - Midnight private consent ensures access decisions are provable without revealing data (stubbed ZK verification today).
-  - Aiken/Cardano public audit logs provide immutable **who/when** metadata without PHI.
-
-- **Data minimization**
-  - Public profiles expose only non‑sensitive info (doctor names, specialties, organizations).
-  - Patients never get public profiles by design.
-
-For further cryptographic details, see `BACKEND_SETUP.md`, `BACKEND_QUICK_START.md`, and `INTEGRATION.md`.
+**As a Doctor:**
+1. Connect wallet and register as a doctor
+2. Go to "Access Requests" page
+3. Submit an access request to a patient's wallet address
+4. View "Request Logs" to see the status of your requests
 
 ---
 
-## Troubleshooting & Known Issues
+## 📁 Project Structure
 
-- **Database connection errors**
-  - Confirm `DATABASE_URL` is correct and URL‑encoded.
-  - If Supabase shows “Not IPv4 compatible”, follow `docs/DATABASE_CONNECTION_FIX.md` and use the **Session Pooler** connection string.
-  - Use `npm run db:test` and `scripts/test-dns.js` to debug connectivity.
-
-- **Wallet not detected**
-  - Ensure Eternl extension is installed and unlocked.
-  - The UI will show “Eternl wallet not detected” if `window.cardano.eternl` is missing.
-
-- **Address format issues**
-  - Logs will show whether addresses are bech32 or hex.
-  - If hex appears where bech32 is expected, check `cardano-address.ts` and `wallet-utils.ts` behavior.
-
-- **Profile decryption failures**
-  - Often due to:
-    - Wallet account changed (key derived from different signing key),
-    - Old data encrypted under a previous scheme.
-  - The app catches decryption errors and prompts user to approve wallet signing again; as a last resort, users may need to re‑register.
-
-Additional debugging notes are in `DEBUGGING_WALLET_ISSUE.md` and inline logging throughout wallet and encryption utilities.
+```
+MedLedger AI/
+├── app/                    # Next.js App Router pages
+│   ├── page.tsx           # Main dashboard
+│   ├── access-requests/  # Access request management
+│   ├── logs/              # Request logs for doctors
+│   ├── records/           # Medical records management
+│   └── ai/                # AI agent interactions
+│
+├── components/             # React components
+│   ├── ui/                # Reusable UI components
+│   ├── navbar.tsx         # Navigation bar
+│   ├── wallet-switcher.tsx # Wallet connection UI
+│   └── ...                # Feature components
+│
+├── src/                   # Express backend
+│   ├── index.ts           # Server entry point
+│   ├── db.ts              # Database connection
+│   ├── routes/            # API route handlers
+│   ├── aiken/             # Aiken/Cardano integration
+│   ├── midnight/          # Midnight ZK integration
+│   └── masumi/            # Masumi agent integration
+│
+├── lib/                   # Shared utilities
+│   ├── crypto/            # Encryption functions
+│   ├── storage/           # File storage utilities
+│   └── ...                # Helper functions
+│
+├── hooks/                  # React hooks
+│   ├── useWalletStore.ts  # Wallet state management
+│   └── useRoleStore.ts    # User role management
+│
+├── contracts/             # Smart contracts
+│   └── aiken/             # Aiken validator contracts
+│
+├── database/              # Database schemas
+│   ├── schema.sql         # Main database schema
+│   └── migrations/       # Database migrations
+│
+├── scripts/               # Utility scripts
+│   ├── setup-database.js  # Database setup
+│   └── ...                # Helper scripts
+│
+└── docs/                  # Documentation
+    └── ...                # Additional documentation
+```
 
 ---
 
-## Roadmap (from ACCESS_WORKFLOW & Integration Docs)
+## 🔧 Available Scripts
 
-Short‑ to mid‑term enhancements planned in the docs and code comments:
+### Development
+```bash
+npm run dev              # Start Next.js frontend (port 3000)
+npm run server:dev       # Start Express backend (port 4000)
+npm run build            # Build for production
+npm run start            # Start production server
+npm run lint             # Run ESLint
+```
 
-- **Frontend**
-  - Full record upload and IPFS/Filecoin integration.
-  - Expanded dashboards: `/records`, `/ai`, `/settings`.
-  - Richer AI‑powered analysis workflows using agents.
+### Database
+```bash
+npm run db:setup         # Create database tables
+npm run db:reset         # Reset database (WARNING: deletes all data)
+npm run db:check-users   # Check users in database
+npm run db:migrate       # Run database migrations
+```
 
-- **Backend / Blockchain**
-  - Replace Midnight stubs with real SDK integration and deploy private consent contracts.
-  - Replace Aiken audit stubs with Lucid‑based Cardano transactions and real on‑chain queries.
-  - Implement ECDH‑based shared keys for doctor‑patient encrypted data sharing (beyond profile).
+---
 
-- **Security & Ops**
-  - Add robust rate‑limiting and auth middleware.
-  - Integrate Sentry/GA where configured.
-  - Harden logging and monitoring for production.
+## 🔐 Security Features
 
-This README is intended as the **single, comprehensive entrypoint** to the MedLedger AI codebase; for deeper implementation details, follow the referenced files and docs within the repository. 
+- **Client-Side Encryption**: All medical data encrypted in browser before sending to backend
+- **Zero-Knowledge Architecture**: Backend never decrypts or sees plaintext data
+- **Wallet-Based Identity**: No passwords, uses Cardano wallet addresses
+- **Blockchain Audit Logs**: Immutable records of all access requests
+- **Zero-Knowledge Proofs**: Private consent verification without data leakage
+- **HTTPS/TLS**: Secure communication (in production)
 
+---
+
+## 🌐 API Endpoints
+
+### Health Check
+- `GET /health` - Server health status
+
+### Profile Management
+- `GET /api/profile/:walletAddress` - Get user profile
+- `POST /api/profile` - Create/update profile
+
+### Access Requests
+- `POST /api/access/request` - Create access request
+- `GET /api/access/pending` - Get pending requests
+- `POST /api/access/approve` - Approve request
+- `POST /api/access/reject` - Reject request
+- `GET /api/access/all` - Get all requests (doctor view)
+
+### Records
+- `GET /api/records` - List medical records
+- `POST /api/records` - Upload medical record
+- `GET /api/records/:id` - Get specific record
+
+### AI Agents
+- `POST /api/agents/explain` - Explain medical record
+- `POST /api/agents/appointment` - Schedule appointment
+- `POST /api/agents/insurance` - Insurance assistance
+
+---
+
+## 🧪 Testing
+
+```bash
+# Test database connection
+npm run db:check-users
+
+# Test blockchain integration (if configured)
+# Note: Requires Blockfrost API key
+```
+
+---
+
+## 🐛 Troubleshooting
+
+### Database Connection Issues
+- **Problem**: Cannot connect to Supabase
+- **Solution**: 
+  1. Verify `DATABASE_URL` is correct
+  2. URL-encode special characters in password
+  3. Use Session Pooler connection (port 6543) on Windows
+  4. Check Supabase project is active
+
+### Wallet Not Detected
+- **Problem**: Eternl wallet not found
+- **Solution**:
+  1. Install Eternl browser extension
+  2. Unlock your wallet
+  3. Refresh the page
+  4. Check browser console for errors
+
+### Port Already in Use
+- **Problem**: Port 3000 or 4000 already in use
+- **Solution**:
+  1. Change `PORT` in `.env.local` for backend
+  2. Update `NEXT_PUBLIC_API_URL` accordingly
+  3. Kill process using the port: `npx kill-port 3000`
+
+### Build Errors
+- **Problem**: TypeScript or build errors
+- **Solution**:
+  1. Delete `node_modules` and `package-lock.json`
+  2. Run `npm install` again
+  3. Check TypeScript version compatibility
+
+---
+
+## 📚 Documentation
+
+Additional documentation is available in the `docs/` directory:
+
+- `docs/ACCESS_WORKFLOW.md` - Complete access request workflow
+- `docs/AIKEN_INTEGRATION_COMPLETE.md` - Aiken blockchain integration guide
+- `docs/BACKEND_SETUP.md` - Backend setup details
+- `docs/DATABASE_CONNECTION_FIX.md` - Database connection troubleshooting
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- **Cardano Foundation** - Blockchain infrastructure
+-**Hack2Skill team** - innovation Partner
+- **Aiken Language** - Smart contract development
+- **Midnight Network** - Zero-knowledge privacy layer
+- **Masumi Network** - AI agent infrastructure
+- **Supabase** - Database hosting
+- **Next.js Team** - Frontend framework
+
+---
+
+## 📞 Support
+
+For issues, questions, or contributions:
+- Open an issue on GitHub
+- Check the documentation in `docs/`
+- Review troubleshooting section above
+
+---
+
+## 🗺️ Roadmap
+
+### Current Status
+- ✅ Core platform functionality
+- ✅ Wallet-based authentication
+- ✅ Client-side encryption
+- ✅ Access request workflow
+- ✅ Aiken blockchain integration (Preprod Testnet)
+- ✅ Midnight ZK integration (stubbed)
+
+### Upcoming Features
+- 🔄 Real Midnight SDK integration
+- 🔄 Mainnet deployment
+- 🔄 Enhanced AI agent capabilities
+- 🔄 IPFS/Filecoin storage integration
+- 🔄 Mobile app support
+- 🔄 Multi-wallet support
+
+---
+
+**Built with ❤️ for healthcare privacy and patient sovereignty**

@@ -16,6 +16,12 @@ const crypto = require("crypto");
 const { Pool } = require("pg");
 
 async function checkAndSetup() {
+  // Skip database checks on Vercel builds
+  if (process.env.VERCEL || process.env.VERCEL_ENV) {
+    console.log("⏭️  Skipping database checks on Vercel build");
+    process.exit(0);
+  }
+
   let needsSetup = false;
   const errors = [];
 

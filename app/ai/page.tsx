@@ -295,7 +295,13 @@ export default function AIPage() {
     });
 
     try {
-      let response;
+      let response: {
+        result?: any;
+        job_id?: string;
+        status?: string;
+        conversation_id?: string;
+        [key: string]: any;
+      };
       
       // Get user's query input (required - button is disabled if empty)
       const userQuery = userQueries[agentId]?.trim();

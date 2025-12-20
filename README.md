@@ -4,6 +4,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4-blue.svg)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-14.2-black.svg)](https://nextjs.org/)
 [![Cardano](https://img.shields.io/badge/Cardano-Preprod-orange.svg)](https://cardano.org/)
+[![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-000000.svg)](https://vercel.com)
 
 ## 🎯 Problem Statement
 
@@ -253,7 +254,54 @@ Before setting up MedLedger AI, ensure you have the following installed:
 
 ---
 
-## 🚀 Quick Setup Guide
+## 🚀 Deployment Options
+
+### Vercel Deployment (Recommended)
+
+**MedLedger AI is now fully configured for Vercel deployment!** The application deploys both frontend and backend as a single deployment.
+
+#### Prerequisites
+- Vercel account (free tier works)
+- GitHub repository access
+- Supabase database (for data persistence)
+
+#### Quick Deploy Steps
+
+1. **Connect to Vercel:**
+   - Go to [vercel.com](https://vercel.com)
+   - Click "Add New..." → "Project"
+   - Import your GitHub repository: `Anajrajeev/MedLedger-AI`
+
+2. **Configure Environment Variables:**
+   Add these required variables in Vercel dashboard:
+   ```
+   DATABASE_URL=your_supabase_connection_string
+   NEXT_PUBLIC_API_URL=https://your-deployment-url.vercel.app
+   NEXT_PUBLIC_CARDANO_NETWORK=testnet
+   NEXT_PUBLIC_ENABLE_AI_FEATURES=true
+   NEXT_PUBLIC_ENABLE_INSURANCE_AUTOMATION=true
+   NEXT_PUBLIC_ENABLE_DEMO_MODE=false
+   ```
+
+3. **Deploy:**
+   - Click "Deploy"
+   - Wait for build completion (2-5 minutes)
+   - Your app will be live at `https://medledger-ai.vercel.app`
+
+#### Post-Deployment Setup
+- Update `NEXT_PUBLIC_API_URL` to your Vercel deployment URL
+- Configure Blockfrost API key for Cardano features (optional)
+- Set up Backblaze B2 for file storage (optional)
+
+### Alternative: Separate Frontend/Backend
+If you prefer separate deployments:
+- **Frontend:** Deploy Next.js app to Vercel/Netlify
+- **Backend:** Deploy Express app to Railway/Render/Fly.io
+- Set `NEXT_PUBLIC_API_URL` to your backend URL
+
+---
+
+## 🚀 Quick Setup Guide (Local Development)
 
 Follow these steps to get MedLedger AI running on your local machine:
 

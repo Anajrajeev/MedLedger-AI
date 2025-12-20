@@ -43,3 +43,13 @@ next-env.d.ts
 *.swo
 *~
 
+# Python (if needed for AI agents)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Project specific logs
+job_results/
+logs/
+*.log

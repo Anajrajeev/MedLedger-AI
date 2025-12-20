@@ -33,12 +33,14 @@ Healthcare data management faces critical challenges in today's digital landscap
 - **Granular Access Control**: Approve or reject access requests from doctors, hospitals, or other healthcare providers
 - **Complete Audit Trail**: View all access requests and see exactly who accessed your data and when
 - **Portable Health Records**: Access your medical data from anywhere using your Cardano wallet
+- **AI-Powered Health Assistance**: Use intelligent agents to understand medical information, schedule appointments, and manage insurance
 
 ### For Healthcare Providers
 - **Request Patient Data Access**: Submit access requests for specific record types (lab results, imaging, prescriptions, etc.)
 - **Verify Consent**: Automatically verify patient consent through blockchain before accessing data
 - **Compliance Ready**: Maintain immutable audit logs for regulatory compliance
 - **Patient Management**: Save patient contacts and manage access requests efficiently
+- **AI-Assisted Communication**: Use AI agents to explain complex medical information to patients and coordinate care
 
 ### For Healthcare Organizations
 - **HIPAA/GDPR Compliance**: Built-in privacy controls and audit trails help meet regulatory requirements
@@ -174,9 +176,9 @@ Healthcare data management faces critical challenges in today's digital landscap
 
 ### AI & Agents
 
-#### Masumi Network
+#### Masumi Network Integration
 - **Purpose**: Decentralized AI agent network for payments and identity management
-- **What it does**: 
+- **What it does**:
   - Handles payments for AI agent services
   - Provides identity verification
   - Manages agent registry
@@ -184,11 +186,104 @@ Healthcare data management faces critical challenges in today's digital landscap
 - **Status**: Optional integration, can be enabled via environment variables
 - **Location**: `src/masumi/`
 
-#### AI Agents
-- **Explainer Agent**: Explains medical records and test results in plain language
-- **Appointment Agent**: Helps schedule and manage medical appointments
-- **Insurance Agent**: Assists with insurance claims and coverage questions
-- **Architecture**: Agents are separate services deployed independently, integrated via REST APIs
+#### 🤖 AI Healthcare Agents
+
+MedLedger AI features three specialized AI agents that help patients and healthcare providers with different aspects of medical management:
+
+##### 1. 📋 Explainer Agent
+**Purpose**: Makes complex medical information accessible to everyone
+
+**What it does**:
+- **Medical Term Translation**: Explains complex medical jargon in simple, understandable language
+- **Test Result Interpretation**: Analyzes lab results, imaging reports, and diagnostic tests
+- **Document Analysis**: Processes PDF medical records and extracts key information
+- **Health Literacy**: Helps patients understand their conditions, treatments, and medications
+
+**How it works**:
+- **Text Input**: Users can ask questions about medical terms or conditions
+- **PDF Upload**: Upload medical documents for automated analysis
+- **Patient-Specific**: Uses patient context to provide personalized explanations
+
+**Example Use Cases**:
+- "What does 'myocardial infarction' mean?"
+- "Can you explain my blood test results?"
+- Upload a PDF report to get a summary in plain language
+
+##### 2. 📅 Appointment Agent
+**Purpose**: Intelligent appointment scheduling and healthcare coordination
+
+**What it does**:
+- **Smart Scheduling**: Finds optimal appointment times based on patient preferences and availability
+- **Multi-Provider Coordination**: Manages appointments across different healthcare providers
+- **Reminder System**: Sends automated reminders for upcoming appointments
+- **Follow-up Coordination**: Schedules follow-up visits and preventive care appointments
+- **Insurance Integration**: Considers insurance coverage for appointment types
+
+**How it works**:
+- **Patient Data Integration**: Uses stored patient information (age, location, medical history)
+- **Provider Matching**: Matches patients with appropriate healthcare specialists
+- **Calendar Integration**: Coordinates with provider schedules and patient availability
+- **Automated Booking**: Handles the complete booking process with confirmation
+
+**Example Use Cases**:
+- "Schedule a cardiology appointment for next month"
+- "Find a pediatrician near my location"
+- "Book a follow-up visit after my surgery"
+
+##### 3. 🛡️ Insurance Agent
+**Purpose**: Navigate healthcare insurance complexity with AI assistance
+
+**What it does**:
+- **Coverage Analysis**: Explains what services are covered by insurance plans
+- **Claim Processing**: Helps understand claim status and processing times
+- **Cost Estimation**: Provides estimates for medical procedures and treatments
+- **Appeal Assistance**: Helps prepare insurance appeal letters and documentation
+- **Network Provider Matching**: Finds in-network healthcare providers
+- **Deductible Tracking**: Monitors insurance deductibles and out-of-pocket expenses
+
+**How it works**:
+- **Conversation Memory**: Maintains context across multiple interactions
+- **Document Analysis**: Processes insurance documents and EOBs (Explanation of Benefits)
+- **Real-time Updates**: Provides current information about insurance policies
+- **Personalized Advice**: Tailored recommendations based on patient insurance details
+
+**Example Use Cases**:
+- "Is my MRI covered by insurance?"
+- "Why was my claim denied?"
+- "Find in-network specialists for my condition"
+- "Help me understand my deductible balance"
+
+#### 🏗️ Agent Architecture
+
+**Decentralized Design**:
+- **Independent Services**: Each agent runs as a separate, deployable service
+- **REST API Integration**: Agents communicate via standardized REST APIs
+- **Scalable Deployment**: Agents can be deployed on different platforms/infrastructure
+- **Version Independence**: Agents can be updated independently without affecting others
+
+**Data Flow**:
+1. **Frontend Request**: User interacts with agent interface in MedLedger AI
+2. **Backend Routing**: Express server routes request to appropriate agent endpoint
+3. **Agent Processing**: Agent processes request using specialized AI models
+4. **Response Formatting**: Agent returns structured response with job status and results
+5. **Frontend Display**: Results presented to user with appropriate UI components
+
+**Environment Configuration**:
+```env
+# Agent Service Endpoints
+EXPLAINER_AGENT_ENDPOINT=https://your-explainer-agent.example.com
+APPOINTMENT_AGENT_ENDPOINT=https://your-appointment-agent.example.com
+INSURANCE_AGENT_ENDPOINT=https://your-insurance-agent.example.com
+
+# Masumi Integration (Optional)
+MASUMI_ENABLED=false
+MASUMI_PAYMENT_SERVICE_URL=https://masumi-payment-service.example.com/api/v1
+EXPLAINER_AGENT_ID=your_agent_id
+APPOINTMENT_AGENT_ID=your_agent_id
+INSURANCE_AGENT_ID=your_agent_id
+```
+
+**Fallback Mode**: When agent services are not deployed, the system provides simulated responses for development and testing.
 
 ### Storage
 - **Backblaze B2**
